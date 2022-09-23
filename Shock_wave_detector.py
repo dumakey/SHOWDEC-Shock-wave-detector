@@ -267,13 +267,15 @@ class ShockWaveScanner:
         l2_reg = self.parameters.training_parameters['l2_reg']
         dropout = self.parameters.training_parameters['dropout']
         image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
+        # Model = models.slice_scanner_lenet_model
+        Model = models.slice_scanner_inception_model
         if self.model.imported == False:
-            #Model = models.slice_scanner_lenet_model
-            Model = models.slice_scanner_inception_model
+            pretrained_model = None
+        else:
+            pretrained_model = self.model.Model
 
         if sens_var == None:  # If it is a one-time training
-            if self.model.imported == False:
-                self.model.Model = Model(image_shape,l2_reg,alpha,dropout)
+            self.model.Model = Model(image_shape,l2_reg,alpha,dropout,pretrained_model)
             self.model.History = self.model.Model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                       steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
                                                       validation_steps=None)
@@ -415,7 +417,7 @@ class ShockWaveScanner:
 
     def reconstruct_model(self):
 
-        weights_dir = os.path.join(os.path.dirname(self.dataset_dir),'Model')
+        weights_dir = os.path.join(os.path.dirname(self.dataset_dir),'pretrained_Model')
         # Load JSON file
         json_file = open(os.path.join(weights_dir,'SW_model_arquitecture.json'),'r')
         loaded_model_json = json_file.read()
