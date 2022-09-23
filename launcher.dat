@@ -22,7 +22,7 @@ EPOCHS=20
 BATCHSIZE=32
 ADDAUGMENTED=0
 ADDAUGDATAID=1
-
+  
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Dataset Augmentation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 AUGDATA=0
