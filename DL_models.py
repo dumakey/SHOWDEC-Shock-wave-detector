@@ -8,10 +8,12 @@ def swish(x, beta=1):
 def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
     if kwargs:
         parameters = list(kwargs.values())[0]
-        reg_constant = parameters['l2_reg']
+        l2_reg = parameters['l2_reg']
+        l1_reg = parameters['l1_reg']
         act_fun = parameters['act_fun']
     else:
-        reg_constant = 0.0
+        l2_reg = 0.0
+        l1_reg = 0.0
         act_fun = 'relu'
 
     if p != 0:
@@ -19,7 +21,7 @@ def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
     else:
         net = X
     net = tf.keras.layers.Conv2D(num_channels, kernel_size=f, strides=s, padding='valid',
-                        kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+                        kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
     net = tf.keras.layers.BatchNormalization()(net)
     
     if act_fun == 'leaky':
@@ -60,30 +62,32 @@ def get_padding(f,s,nin,nout):
 
     return padding
 
-def slice_scanner_inception_model(image_shape, reg_constant, alpha, dropout=0.0, pretrained_model=None):
+def slice_scanner_inception_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu', pretrained_model=None):
 
     if pretrained_model == None:
         input_shape = tuple(image_shape.as_list() + [3])
         X_input = tf.keras.layers.Input(shape=input_shape)
-        net = conv2D_block(X_input,num_channels=32,f=5,p=0,s=1,dropout=0.0,kwargs={'l2_reg':reg_constant,'act_fun':'swish'})
+        net = conv2D_block(X_input,num_channels=32,f=5,p=0,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                                       'act_fun':activation})
         net = tf.keras.layers.AvgPool2D(pool_size=3,strides=3)(net)
-        net = conv2D_block(net,num_channels=64,f=5,p=0,s=1,dropout=0.0,kwargs={'l2_reg':reg_constant,'act_fun':'swish'})
+        net = conv2D_block(net,num_channels=64,f=5,p=0,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                                   'act_fun':activation})
         net = tf.keras.layers.AvgPool2D(pool_size=3,strides=3)(net)
         net = inception_block(X=net,num_channels=[256,128,64],f=[3,5,9],p=[(1,1),(2,2),(19,25)],s=[(1,1),(1,1),(2,2)],
-                              reg=reg_constant)
+                              reg=l2_reg)
         net = tf.keras.layers.Flatten()(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         model = tf.keras.Model(inputs=X_input,outputs=net,name='Inception_SliceScanner')
     else:
         model = pretrained_model
@@ -95,26 +99,28 @@ def slice_scanner_inception_model(image_shape, reg_constant, alpha, dropout=0.0,
 
     return model
     
-def slice_scanner_lenet_model(image_shape, reg_constant, alpha, dropout=0.0, pretrained_model=None):
+def slice_scanner_lenet_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu', pretrained_model=None):
 
     if pretrained_model == None:
         input_shape = tuple(image_shape.as_list() + [3])
         X_input = tf.keras.layers.Input(shape=input_shape)
-        net = conv2D_block(X_input,num_channels=6,f=5,p=0,s=1,dropout=0.0,kwargs={'l2_reg':reg_constant,'act_fun':'swish'})
+        net = conv2D_block(X_input,num_channels=6,f=5,p=0,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                                   'act_fun':activation})
         net = tf.keras.layers.AvgPool2D(pool_size=2,strides=2)(net)
-        net = conv2D_block(net,num_channels=16,f=5,p=0,s=1,dropout=0.0,kwargs={'l2_reg':reg_constant,'act_fun':'swish'})
+        net = conv2D_block(net,num_channels=16,f=5,p=0,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                                'act_fun':activation})
         net = tf.keras.layers.AvgPool2D(pool_size=2,strides=2)(net)
         net = tf.keras.layers.Flatten()(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=120,activation=None,kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=120,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=84,activation=None,kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=84,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
 
         model = tf.keras.Model(inputs=X_input,outputs=net,name='LeNetSliceScanner')
     else:
@@ -128,26 +134,28 @@ def slice_scanner_lenet_model(image_shape, reg_constant, alpha, dropout=0.0, pre
 
     return model
     
-def slice_scanner_conv_model(image_shape, reg_constant, alpha, dropout=0.0, pretrained_model=None):
+def slice_scanner_conv_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu',pretrained_model=None):
 
     if pretrained_model == None:
         input_shape = tuple(image_shape.as_list() + [3])
         X_input = tf.keras.layers.Input(shape=input_shape)
-        net = conv2D_block(X_input,num_channels=48,f=11,p=0,s=4,dropout=0.0,kwargs={'l2_reg':reg_constant,'act_fun':'swish'})
+        net = conv2D_block(X_input,num_channels=48,f=11,p=0,s=4,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                                    'act_fun':activation})
         net = tf.keras.layers.MaxPool2D(pool_size=3,strides=2)(net)
-        net = conv2D_block(net,num_channels=96,f=5,p=2,s=1,dropout=0.0,kwargs={'l2_reg':reg_constant,'act_fun':'swish'})
+        net = conv2D_block(net,num_channels=96,f=5,p=2,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+                                                                               'act_fun':activation})
         net = tf.keras.layers.MaxPool2D(pool_size=3,strides=2)(net)
         net = tf.keras.layers.Flatten()(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=120,activation=None,kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=120,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=84,activation=None,kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=84,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         net = tf.keras.layers.BatchNormalization()(net)
-        net = tf.keras.layers.Activation('swish')(net)
+        net = tf.keras.layers.Activation(activation)(net)
         net = tf.keras.layers.Dropout(dropout)(net)
-        net = tf.keras.layers.Dense(units=1,activation='sigmoid', kernel_regularizer=tf.keras.regularizers.l2(reg_constant))(net)
+        net = tf.keras.layers.Dense(units=1,activation='sigmoid', kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
         model = tf.keras.Model(inputs=X_input,outputs=net,name='ConvSliceScanner')
     else:
         model = pretrained_model

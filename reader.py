@@ -13,8 +13,8 @@ def read_case_setup(launch_filepath):
     casedata.training_parameters = \
         dict.fromkeys(['train_size', 'learning_rate', 'l2_reg', 'l1_reg', 'dropout', 'epochs', 'batch_size'], None)
     casedata.training_parameters.update({'addaugdata': [None, None]})
-    casedata.img_processing = {'slice_size': [None, None],
-                               'rotation': [None, None, None, None],
+    casedata.img_resize = [None,None]
+    casedata.img_processing = {'rotation': [None, None, None, None],
                                'translation': [None, None, None],
                                'zoom': [None, None],
                                'filter': [None, None, None, None, None],
@@ -37,11 +37,6 @@ def read_case_setup(launch_filepath):
     match = re.search('IMPORTMODEL\s*=\s*(\d).*', data)
     if match:
         casedata.analysis['import'] = int(match.group(1))
-
-    # Augmented dataset selector
-    match = re.search('AUGDATASETID\s*=\s*(\d).*', data)
-    if match:
-        casedata.analysis['augD_ID'] = int(match.group(1))
 
     ## Dataset augmentation
     match = re.search('AUGDATA\s*=\s*(\d).*', data)
@@ -115,33 +110,34 @@ def read_case_setup(launch_filepath):
         match_factor = re.search('ADDAUGDATAID\s*=\s*(\d+\.?\d*).*', data)
         if match_factor:
             casedata.training_parameters['addaugdata'][1] = int(match_factor.group(1))
+
     ## Image processing parameters
     # Image resize
     match_dist = re.search('IMAGERESIZE\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
     if match_dist:
-        casedata.img_processing['slice_size'][0] = int(match_dist.group(1))
-        casedata.img_processing['slice_size'][1] = int(match_dist.group(2))
-        casedata.img_processing['slice_size'] = tuple(casedata.img_processing['slice_size'])
+        casedata.img_resize[0] = int(match_dist.group(1))
+        casedata.img_resize[1] = int(match_dist.group(2))
+        casedata.img_resize = tuple(casedata.img_resize)
 
     # Rotation
     match = re.search('ROTATION\s*=\s*(\d).*', data)
     if match:
         casedata.img_processing['rotation'][0] = int(match.group(1))
+        match_angle = re.search('ROTATIONANGLE\s*=\s*([\+|\-]?\d+\.?\d*).*', data)
+        if match_angle:
+            casedata.img_processing['rotation'][1] = float(match_angle.group(1))
         match = re.search('ROTATIONCENTER\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
         if match:
             if match.group(1) != 'NONE':
-                casedata.img_processing['rotation'][1] = int(match.group(1))
+                casedata.img_processing['rotation'][2] = int(match.group(1))
             elif match.group(2) != 'NONE':
-                casedata.img_processing['rotation'][2] = int(match.group(2))
-            match_angle = re.search('ROTATIONANGLE\s*=\s*(\d+\.?\d*).*', data)
-            if match_angle:
-                casedata.img_processing['rotation'][3] = float(match_angle.group(1))
+                casedata.img_processing['rotation'][3] = int(match.group(2))
 
     # Translation
     match = re.search('TRANSLATION\s*=\s*(\d).*', data)
     if match:
         casedata.img_processing['translation'][0] = int(match.group(1))
-        match_dist = re.search('TRANSLATIONDIST\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
+        match_dist = re.search('TRANSLATIONDIST\s*=\s*\(([\+|\-]?\d+|NONE)\,+([\+|\-]?\d+|NONE)\).*', data)
         if match_dist:
             casedata.img_processing['translation'][1] = float(match_dist.group(1))
             casedata.img_processing['translation'][2] = float(match_dist.group(2))

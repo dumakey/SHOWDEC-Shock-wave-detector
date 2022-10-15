@@ -1,20 +1,16 @@
 import os
 import numpy as np
-import math
 import matplotlib.pyplot as plt
 import pandas as pd
-import csv
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 import cv2 as cv
-import re
 from shutil import rmtree
 
 import DL_models as models
 from Preprocessing import ImageTransformer
 import AugmentationDataset as ADS
 import reader
-
 
 class ShockWaveScanner:
 
@@ -39,8 +35,9 @@ class ShockWaveScanner:
         self.parameters.analysis = casedata.analysis
         self.parameters.training_parameters = casedata.training_parameters
         self.parameters.img_processing = casedata.img_processing
+        self.parameters.img_size = casedata.img_resize
         self.parameters.data_augmentation = casedata.data_augmentation
-        self.dataset_dir = casedata.case_dir
+        self.case_dir = casedata.case_dir
 
         # Sensitivity analysis variable identification
         sens_vars = [parameter for parameter in self.parameters.training_parameters.items() if type(parameter[1]) == list]
@@ -50,7 +47,7 @@ class ShockWaveScanner:
             self.parameters.sens_variable = None
 
         # Check for model reconstruction
-        if check_model:
+        if self.parameters.analysis['import']:
             self.model.imported = True
             self.reconstruct_model()
         else:
@@ -76,10 +73,10 @@ class ShockWaveScanner:
                                          self.parameters.training_parameters['addaugdata'][1]],
                         'DATAGEN': [],
                         }
-        for analysis in analysis_list.keys():
-            F = analysis_list[analysis_ID]
-            fun_args = arguments_list[analysis_ID]
-            F(*fun_args)
+
+        F = analysis_list[analysis_ID]
+        fun_args = arguments_list[analysis_ID]
+        F(*fun_args)
 
     def sensitivity_analysis_on_training(self, add_augmented=False, augdataset_ID=1):
 
@@ -88,7 +85,6 @@ class ShockWaveScanner:
 
         # Perform sensitivity analysis
         self.set_datasets(add_augmented,augdataset_ID)
-        X, y = sw_scanner.read_dataset()
         self.set_tensorflow_datasets()
         self.train_scanner_model(sens_variable)
         self.export_model_performance(sens_variable)
@@ -101,11 +97,10 @@ class ShockWaveScanner:
         self.train_scanner_model()
         self.export_model_performance()
         self.export_model()
-        self.predict_on_test_set()
 
     def data_generation(self):
 
-        transformations = [item[0] for item in self.parameters.img_processing if item[0] == 1]
+        transformations = [{k:v[1:] for (k,v) in self.parameters.img_processing.items() if v[0] == 1}][0]
         augdata_size = self.parameters.data_augmentation[1]
         self.generate_augmented_data(transformations,augdata_size)
 
@@ -140,7 +135,7 @@ class ShockWaveScanner:
 
         if scan:
             samples_path = []
-            for (root, case_dirs, _) in os.walk(self.dataset_dir):
+            for (root, case_dirs, _) in os.walk(os.path.join(self.case_dir,'Datasets','Datasets_orig')):
                 for case_dir in case_dirs:
                     for (case_root, aoa_dirs, _) in os.walk(os.path.join(root,case_dir)):
                         for aoa_dir in aoa_dirs:
@@ -155,7 +150,7 @@ class ShockWaveScanner:
                                                 samples_path.append(sample)
         else:  # If samples are directly storaged in folder
             samples_path = []
-            for (root, case_dirs, _) in os.walk(self.dataset_dir):
+            for (root, case_dirs, _) in os.walk(os.path.join(self.case_dir,'Datasets','Datasets_orig')):
                 for case_dir in case_dirs:
                     samples = os.listdir(os.path.join(root,case_dir))
                     for sample in samples:
@@ -163,7 +158,7 @@ class ShockWaveScanner:
 
         # Generate X,y datasets
         m = len(samples_path)
-        slice_dimensions = self.parameters.img_processing['slice_size']
+        slice_dimensions = self.parameters.img_size
         X = np.zeros((m,slice_dimensions[1],slice_dimensions[0],3),dtype='uint8')
         y = np.zeros((m,),dtype=int)
         for i,sample in enumerate(samples_path):
@@ -177,7 +172,7 @@ class ShockWaveScanner:
 
     def read_augmented_datasets(self, augdataset_ID=None):
 
-        dataset_dir = os.path.join(os.path.dirname(self.dataset_dir),'Datasets_augmented','Dataset_{}'.format(augdataset_ID))
+        dataset_dir = os.path.join(self.case_dir,'Datasets','Datasets_augmented','Dataset_{}'.format(augdataset_ID))
         if os.path.exists(dataset_dir):
             files = [os.path.join(dataset_dir,file) for file in os.listdir(dataset_dir)]
             X = []
@@ -194,16 +189,16 @@ class ShockWaveScanner:
 
     def standardize_image_size(self, X):
 
-        img_dimensions = self.parameters.img_processing['slice_size']
+        img_dimensions = self.parameters.img_size
         m = X.shape[0]
-        if X[0].shape[0:2] != (img_dimensions[1],img_dimensions[0]):
-            X_resized = np.zeros((m,img_dimensions[1],img_dimensions[0],3),dtype='uint8')
-            for i in range(m):
+        X_resized = np.zeros((m,img_dimensions[1],img_dimensions[0],3),dtype='uint8')
+        for i in range(m):
+            if X[i].shape[0:2] != (img_dimensions[1],img_dimensions[0]):
                 X_resized[i] = ImageTransformer.resize(X[i],img_dimensions)
+            else:
+                X_resized[i] = X[i]
 
-            return X_resized
-        else:
-            return X
+        return X_resized
 
     def set_datasets(self, add_augmented=False, augdataset_ID=1):
 
@@ -237,22 +232,18 @@ class ShockWaveScanner:
 
     def set_tensorflow_datasets(self):
 
-        self.datasets.dataset_train = self.create_dataset_pipeline(self.datasets.data_train,is_train=True)
+        batch_size_train = self.parameters.training_parameters['batch_size']
+        self.datasets.dataset_train = self.create_dataset_pipeline(self.datasets.data_train,is_train=True,batch_size=batch_size_train)
         self.datasets.dataset_cv = self.create_dataset_pipeline(self.datasets.data_cv,is_train=False,batch_size=1)
         self.datasets.dataset_test = self.preprocess_data(self.datasets.data_test[0],tf.one_hot(self.datasets.data_test[1],depth=1))
 
-    def generate_augmented_data(self, transformations={}, augmented_dataset_size=1):
-
-        if self.parameters.img_processing:
-            transformations = self.parameters.img_processing
+    def generate_augmented_data(self, transformations, augmented_dataset_size=1):
 
         # Set storage folder for augmented dataset
-        initial_dataset_folder = os.path.basename(self.dataset_dir)
-        initial_dataset_root = os.path.dirname(self.dataset_dir)
-        augmented_dataset_dir = os.path.join(initial_dataset_root,initial_dataset_folder + '_augmented')
+        augmented_dataset_dir = os.path.join(self.case_dir,'Datasets','Datasets_augmented')
 
         # Unpack data
-        X, y = sw_scanner.read_dataset()
+        X, y = self.read_dataset()
         # Generate new dataset
         data_augmenter = ADS.datasetAugmentationClass(X,y,transformations,augmented_dataset_size,augmented_dataset_dir)
         data_augmenter.transform_images()
@@ -265,8 +256,10 @@ class ShockWaveScanner:
         nepoch = self.parameters.training_parameters['epochs']
         batch_size = self.parameters.training_parameters['batch_size']
         l2_reg = self.parameters.training_parameters['l2_reg']
+        l1_reg = self.parameters.training_parameters['l1_reg']
         dropout = self.parameters.training_parameters['dropout']
         image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
+        activation = 'swish'
         # Model = models.slice_scanner_lenet_model
         Model = models.slice_scanner_inception_model
         if self.model.imported == False:
@@ -275,7 +268,7 @@ class ShockWaveScanner:
             pretrained_model = self.model.Model
 
         if sens_var == None:  # If it is a one-time training
-            self.model.Model = Model(image_shape,l2_reg,alpha,dropout,pretrained_model)
+            self.model.Model = Model(image_shape,alpha,l2_reg,l1_reg,dropout,activation,pretrained_model)
             self.model.History = self.model.Model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                       steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
                                                       validation_steps=None)
@@ -285,7 +278,7 @@ class ShockWaveScanner:
             if type(alpha) == list:
                 for learning_rate in alpha:
                     if self.model.imported == False:
-                        model = Model(image_shape,l2_reg,learning_rate,dropout)
+                        model = Model(image_shape,learning_rate,l2_reg,l1_reg,dropout)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
@@ -293,7 +286,15 @@ class ShockWaveScanner:
             elif type(l2_reg) == list:
                 for regularizer in l2_reg:
                     if self.model.imported == False:
-                        model = Model(image_shape,regularizer,alpha,dropout)
+                        model = Model(image_shape,alpha,regularizer,l1_reg,dropout)
+                    self.model.Model.append(model)
+                    self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
+                                                        steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
+                                                        validation_steps=None))
+            elif type(l1_reg) == list:
+                for regularizer in l1_reg:
+                    if self.model.imported == False:
+                        model = Model(image_shape,alpha,l2_reg,regularizer,dropout)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
@@ -301,7 +302,7 @@ class ShockWaveScanner:
             elif type(dropout) == list:
                 for rate in dropout:
                     if self.model.imported == False:
-                        model = Model(image_shape,l2_reg,alpha,rate)
+                        model = Model(image_shape,alpha,l2_reg,l1_reg,rate)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
@@ -325,13 +326,11 @@ class ShockWaveScanner:
 
         for key in metrics.keys():
             metric_function = metrics_functions[key]
-            metric_function.update_state(dataset_test[1],logits)
+            metric_function.update_state(y_test,logits)
             metrics[key] = metric_function.result().numpy()
 
         self.predictions.predictions = y_hat
         self.predictions.score = metrics
-
-        print()
 
     def export_model_performance(self, sens_var=None):
 
@@ -364,10 +363,10 @@ class ShockWaveScanner:
                 ax.legend()
 
                 if sens_var:
-                    storage_dir = os.path.join(os.path.dirname(self.dataset_dir),'Model_performance','{}={:.3f}'.format(
+                    storage_dir = os.path.join(self.case_dir,'Results','Model_performance','{}={:.3f}'.format(
                                                sens_var[0],sens_var[1][i]))
                 else:
-                    storage_dir = os.path.join(os.path.dirname(self.dataset_dir),'Model_performance')
+                    storage_dir = os.path.join(self.case_dir,'Results','Model_performance')
                 if os.path.exists(storage_dir):
                     rmtree(storage_dir)
                 os.makedirs(storage_dir)
@@ -400,9 +399,9 @@ class ShockWaveScanner:
 
         for i in range(N):
             if sens_var:
-                weights_dir = os.path.join(os.path.dirname(self.dataset_dir),'Model','{}={:.3f}'.format(sens_var[0],sens_var[1][i]))
+                weights_dir = os.path.join(os.path.dirname(self.case_dir),'Results','Model','{}={:.3f}'.format(sens_var[0],sens_var[1][i]))
             else:
-                weights_dir = os.path.join(os.path.dirname(self.dataset_dir),'Model')
+                weights_dir = os.path.join(os.path.dirname(self.case_dir),'Results','Model')
             if os.path.exists(weights_dir):
                 rmtree(weights_dir)
             os.makedirs(weights_dir)
@@ -417,7 +416,7 @@ class ShockWaveScanner:
 
     def reconstruct_model(self):
 
-        weights_dir = os.path.join(os.path.dirname(self.dataset_dir),'pretrained_Model')
+        weights_dir = os.path.join(self.case_dir,'Results','pretrained_Model')
         # Load JSON file
         json_file = open(os.path.join(weights_dir,'SW_model_arquitecture.json'),'r')
         loaded_model_json = json_file.read()
@@ -431,6 +430,6 @@ class ShockWaveScanner:
 
 if __name__ == '__main__':
     launcher = r'C:\Users\juan.ramos\Shock_wave_detector\Scripts\launcher.dat'
-    sw_scanner = ShockWaveScanner(launcher,check_model=True)
+    sw_scanner = ShockWaveScanner(launcher,check_model=False)
     sw_scanner.launch_analysis()
     print()
