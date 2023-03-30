@@ -3,14 +3,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from collections import OrderedDict
 import tensorflow as tf
 import cv2 as cv
+import pickle
 from shutil import rmtree
+from random import randint
 
 import DL_models as models
 from Preprocessing import ImageTransformer
+import Dataset_processing as Dataprocess
 import AugmentationDataset as ADS
 import reader
+import Postprocessing
 
 class ShockWaveScanner:
 
@@ -37,6 +42,8 @@ class ShockWaveScanner:
         self.parameters.img_processing = casedata.img_processing
         self.parameters.img_size = casedata.img_resize
         self.parameters.data_augmentation = casedata.data_augmentation
+        self.parameters.activation_plotting = casedata.activation_plotting
+        self.parameters.prediction = casedata.prediction
         self.case_dir = casedata.case_dir
 
         # Sensitivity analysis variable identification
@@ -47,9 +54,9 @@ class ShockWaveScanner:
             self.parameters.sens_variable = None
 
         # Check for model reconstruction
-        if self.parameters.analysis['import']:
+        if self.parameters.analysis['import'] == True:
             self.model.imported = True
-            self.reconstruct_model()
+            self.model.Model, self.model.History = self.reconstruct_model()
         else:
             self.model.imported = False
 
@@ -62,16 +69,20 @@ class ShockWaveScanner:
 
         analysis_ID = self.parameters.analysis['type']
         analysis_list = {
-                        'SINGLETRAINING': self.singletraining,
-                        'SENSANALYSIS': self.sensitivity_analysis_on_training,
-                        'DATAGEN': self.data_generation,
+                        'singletraining': self.singletraining,
+                        'sensanalysis': self.sensitivity_analysis_on_training,
+                        'datagen': self.data_generation,
+                        'plotactivations': self.plot_activations,
+                        'predict': self.predict_on_test_set,
                         }
         arguments_list = {
-                        'SINGLETRAINING': [bool(self.parameters.training_parameters['addaugdata'][0]),
+                        'singletraining': [bool(self.parameters.training_parameters['addaugdata'][0]),
                                            self.parameters.training_parameters['addaugdata'][1]],
-                        'SENSANALYSIS': [bool(self.parameters.training_parameters['addaugdata'][0]),
+                        'sensanalysis': [bool(self.parameters.training_parameters['addaugdata'][0]),
                                          self.parameters.training_parameters['addaugdata'][1]],
-                        'DATAGEN': [],
+                        'datagen': [],
+                        'plotactivations': [],
+                        'predict': [],
                         }
 
         F = analysis_list[analysis_ID]
@@ -80,21 +91,40 @@ class ShockWaveScanner:
 
     def sensitivity_analysis_on_training(self, add_augmented=False, augdataset_ID=1):
 
+        case_dir = self.case_dir
+        img_dims = self.parameters.img_size
+        batch_size = self.parameters.training_parameters['batch_size']
+        train_size = self.parameters.training_parameters['train_size']
+
         # Retrieve sensitivity variable
         sens_variable = self.parameters.sens_variable
 
         # Perform sensitivity analysis
-        self.set_datasets(add_augmented,augdataset_ID)
-        self.set_tensorflow_datasets()
-        self.train_scanner_model(sens_variable)
+        self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
+        Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        
+        self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
+        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        if self.model.imported == False:
+            self.train_model(sens_variable)
+        self.export_nn_log()
         self.export_model_performance(sens_variable)
         self.export_model(sens_variable)
 
     def singletraining(self, add_augmented=False, augdataset_ID=1):
 
-        self.set_datasets(add_augmented,augdataset_ID)
-        self.set_tensorflow_datasets()
-        self.train_scanner_model()
+        case_dir = self.case_dir
+        img_dims = self.parameters.img_size
+        train_size = self.parameters.training_parameters['train_size']
+        batch_size = self.parameters.training_parameters['batch_size']
+
+        self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
+        Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
+        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        if self.model.imported == False:
+            self.train_model()
+        self.export_nn_log()
         self.export_model_performance()
         self.export_model()
 
@@ -104,152 +134,72 @@ class ShockWaveScanner:
         augdata_size = self.parameters.data_augmentation[1]
         self.generate_augmented_data(transformations,augdata_size)
 
-    def label_image(self, frame_name):
+    def plot_activations(self):
 
-        if 'SW=0' in os.path.splitext(frame_name)[0]:
-            return 0
-        elif 'SW=1' in os.path.splitext(frame_name)[0]:
-            return 1
+        # Parameters
+        case_dir = self.case_dir
+        case_ID = self.parameters.analysis['case_ID']
+        img_dims = self.parameters.img_size
+        batch_size = self.parameters.training_parameters['batch_size']
+        train_size = self.parameters.training_parameters['train_size']
+        add_augmented = bool(self.parameters.training_parameters['addaugdata'][0])
+        augdataset_ID = self.parameters.training_parameters['addaugdata'][1]
+        n = self.parameters.activation_plotting['n_samples']
+        figs_per_row = self.parameters.activation_plotting['n_cols']
+        rows_to_cols_ratio = self.parameters.activation_plotting['rows2cols_ratio']
+        storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
 
-    def preprocess_data(self, im, label):
-        im = tf.cast(im, tf.float32)
-        im = im / 127.5
-        im = im - 1
+        # Generate datasets
+        self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
+            Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
+        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
 
-        return im, label
+        m_tr = self.datasets.data_train[0].shape[0]
+        m_cv = self.datasets.data_cv[0].shape[0]
+        m_ts = self.datasets.data_test[0].shape[0]
+        m = m_tr + m_cv + m_ts
 
-    def create_dataset_pipeline(self, dataset, is_train=True, num_threads=8, prefetch_buffer=100, batch_size=32):
-        X, y = dataset
-        y_oh = tf.one_hot(y,depth=1)
-        dataset_tensor = tf.data.Dataset.from_tensor_slices((X, y_oh))
+        # Read datasets
+        dataset = np.zeros((m,img_dims[1],img_dims[0],3),dtype='uint8')
+        dataset[:m_tr,:] = self.datasets.data_train[0]
+        dataset[m_tr:m_tr+m_cv,:] = self.datasets.data_cv[0]
+        dataset[m_tr+m_cv:m,:] = self.datasets.data_test[0]
 
-        if is_train:
-            dataset_tensor = dataset_tensor.shuffle(buffer_size=X.shape[0]).repeat()
-        dataset_tensor = dataset_tensor.map(self.preprocess_data, num_parallel_calls=num_threads)
-        dataset_tensor = dataset_tensor.batch(batch_size)
-        dataset_tensor = dataset_tensor.prefetch(prefetch_buffer)
+        # Index image sampling
+        idx = [randint(1,m) for i in range(n)]
+        idx_set = set(idx)
+        while len(idx) != len(idx_set):
+            extra_item = randint(1,m)
+            idx_set.add(extra_item)
 
-        return dataset_tensor
+        # Reconstruct model
+        model, _ = self.reconstruct_model()
+        #model = Model(image_shape,0.001,0.0,0.0,0.0,activation)
+        # Load weights
+        weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
+        model.load_weights(os.path.join(storage_dir,weights_filename))
 
-    def read_dataset(self, scan=False):
-
-        if scan:
-            samples_path = []
-            for (root, case_dirs, _) in os.walk(os.path.join(self.case_dir,'Datasets','Datasets_orig')):
-                for case_dir in case_dirs:
-                    for (case_root, aoa_dirs, _) in os.walk(os.path.join(root,case_dir)):
-                        for aoa_dir in aoa_dirs:
-                            for (aoa_root, mach_dirs, _) in os.walk(os.path.join(case_root,aoa_dir)):
-                                for mach_dir in mach_dirs:
-                                    for (mach_root, dirs, _) in os.walk(os.path.join(aoa_root,mach_dir)):
-                                        if dirs:
-                                            slices_dir = dirs[0]
-                                            samples = [os.path.join(mach_root,slices_dir,file) for file in
-                                                       os.listdir(os.path.join(root,case_root,aoa_root,mach_root,slices_dir))]
-                                            for sample in samples:
-                                                samples_path.append(sample)
-        else:  # If samples are directly storaged in folder
-            samples_path = []
-            for (root, case_dirs, _) in os.walk(os.path.join(self.case_dir,'Datasets','Datasets_orig')):
-                for case_dir in case_dirs:
-                    samples = os.listdir(os.path.join(root,case_dir))
-                    for sample in samples:
-                        samples_path.append(os.path.join(root,case_dir,sample))
-
-        # Generate X,y datasets
-        m = len(samples_path)
-        slice_dimensions = self.parameters.img_size
-        X = np.zeros((m,slice_dimensions[1],slice_dimensions[0],3),dtype='uint8')
-        y = np.zeros((m,),dtype=int)
-        for i,sample in enumerate(samples_path):
-            # X-array storage
-            img = cv.imread(sample)
-            X[i,:,:,:] = ImageTransformer.resize(img,slice_dimensions)
-            # y-label storage
-            y[i] = self.label_image(os.path.basename(sample))
-
-        return X, y
-
-    def read_augmented_datasets(self, augdataset_ID=None):
-
-        dataset_dir = os.path.join(self.case_dir,'Datasets','Datasets_augmented','Dataset_{}'.format(augdataset_ID))
-        if os.path.exists(dataset_dir):
-            files = [os.path.join(dataset_dir,file) for file in os.listdir(dataset_dir)]
-            X = []
-            y = np.zeros((len(files),),dtype=int)
-            for i,file in enumerate(files):
-                X.append(cv.imread(file))
-                y[i] = self.label_image(file)
-            X = np.array(X)
-        else:
-            X = None
-            y = None
-
-        return X, y
-
-    def standardize_image_size(self, X):
-
-        img_dimensions = self.parameters.img_size
-        m = X.shape[0]
-        X_resized = np.zeros((m,img_dimensions[1],img_dimensions[0],3),dtype='uint8')
-        for i in range(m):
-            if X[i].shape[0:2] != (img_dimensions[1],img_dimensions[0]):
-                X_resized[i] = ImageTransformer.resize(X[i],img_dimensions)
-            else:
-                X_resized[i] = X[i]
-
-        return X_resized
-
-    def set_datasets(self, add_augmented=False, augdataset_ID=1):
-
-        # Read original datasets
-        X_orig, y_orig = self.read_dataset()
-        # Resize images, if necessary
-        X_orig = self.standardize_image_size(X_orig)
-
-        if add_augmented:
-            # Check for augmented datasets
-            X_aug, y_aug = self.read_augmented_datasets(augdataset_ID)
-            X_aug = self.standardize_image_size(X_aug)
-
-            try:
-                _ = X_aug.shape
-
-                # Join both datasets
-                X = np.concatenate((X_orig,X_aug),axis=0)
-                y = np.concatenate((y_orig,y_aug),axis=0)
-            except:
-                X, y = X_orig, y_orig
-        else:
-            X, y = X_orig, y_orig
-
-        X_train, X_val, y_train, y_val = train_test_split(X,y,train_size=self.parameters.training_parameters['train_size'],shuffle=True)
-        X_cv, X_test, y_cv, y_test = train_test_split(X_val,y_val,train_size=0.75,shuffle=True)
-
-        self.datasets.data_train = (X_train, y_train)
-        self.datasets.data_cv = (X_cv, y_cv)
-        self.datasets.data_test = (X_test, y_test)
-
-    def set_tensorflow_datasets(self):
-
-        batch_size_train = self.parameters.training_parameters['batch_size']
-        self.datasets.dataset_train = self.create_dataset_pipeline(self.datasets.data_train,is_train=True,batch_size=batch_size_train)
-        self.datasets.dataset_cv = self.create_dataset_pipeline(self.datasets.data_cv,is_train=False,batch_size=1)
-        self.datasets.dataset_test = self.preprocess_data(self.datasets.data_test[0],tf.one_hot(self.datasets.data_test[1],depth=1))
+        # Plot
+        for idx in idx_set:
+            img = dataset[idx,:]
+            Postprocessing.monitor_hidden_layers(img,model,case_dir,figs_per_row,rows_to_cols_ratio)
 
     def generate_augmented_data(self, transformations, augmented_dataset_size=1):
 
         # Set storage folder for augmented dataset
-        augmented_dataset_dir = os.path.join(self.case_dir,'Datasets','Datasets_augmented')
+        case_dir = self.case_dir
+        img_dims = self.parameters.img_size
+        augmented_dataset_dir = os.path.join(case_dir,'Datasets','Datasets_augmented')
 
         # Unpack data
-        X, y = self.read_dataset()
+        X, y = Dataprocess.set_dataset(case_dir,img_dims)
         # Generate new dataset
         data_augmenter = ADS.datasetAugmentationClass(X,y,transformations,augmented_dataset_size,augmented_dataset_dir)
         data_augmenter.transform_images()
         data_augmenter.export_augmented_dataset()
 
-    def train_scanner_model(self, sens_var=None):
+    def train_model(self, sens_var=None):
 
         # Parameters
         alpha = self.parameters.training_parameters['learning_rate']
@@ -259,59 +209,69 @@ class ShockWaveScanner:
         l1_reg = self.parameters.training_parameters['l1_reg']
         dropout = self.parameters.training_parameters['dropout']
         image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
-        activation = 'swish'
-        # Model = models.slice_scanner_lenet_model
-        Model = models.slice_scanner_inception_model
-        if self.model.imported == False:
-            pretrained_model = None
-        else:
-            pretrained_model = self.model.Model
+        activation = self.parameters.training_parameters['activation']
 
+        Model = models.slice_scanner_lenet_model
+        #Model = models.slice_scanner_inception_model
+
+        self.model.Model = []
+        self.model.History = []
         if sens_var == None:  # If it is a one-time training
-            self.model.Model = Model(image_shape,alpha,l2_reg,l1_reg,dropout,activation,pretrained_model)
-            self.model.History = self.model.Model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
+            self.model.Model.append(Model(image_shape,alpha,l2_reg,l1_reg,dropout,activation))
+            self.model.History.append(self.model.Model[-1].fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                       steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
-                                                      validation_steps=None)
+                                                      validation_steps=None))
         else: # If it is a sensitivity analysis
-            self.model.Model = []
-            self.model.History = []
             if type(alpha) == list:
                 for learning_rate in alpha:
-                    if self.model.imported == False:
-                        model = Model(image_shape,learning_rate,l2_reg,l1_reg,dropout)
+                    model = Model(image_shape,learning_rate,l2_reg,l1_reg,dropout,activation)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
                                                         validation_steps=None))
             elif type(l2_reg) == list:
                 for regularizer in l2_reg:
-                    if self.model.imported == False:
-                        model = Model(image_shape,alpha,regularizer,l1_reg,dropout)
+                    model = Model(image_shape,alpha,regularizer,l1_reg,dropout,activation)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
                                                         validation_steps=None))
             elif type(l1_reg) == list:
                 for regularizer in l1_reg:
-                    if self.model.imported == False:
-                        model = Model(image_shape,alpha,l2_reg,regularizer,dropout)
+                    model = Model(image_shape,alpha,l2_reg,regularizer,dropout,activation)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
                                                         validation_steps=None))
             elif type(dropout) == list:
                 for rate in dropout:
-                    if self.model.imported == False:
-                        model = Model(image_shape,alpha,l2_reg,l1_reg,rate)
+                    model = Model(image_shape,alpha,l2_reg,l1_reg,rate,activation)
+                    self.model.Model.append(model)
+                    self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
+                                                        steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
+                                                        validation_steps=None))
+            elif type(activation) == list:
+                for act in activation:
+                    model = Model(image_shape,alpha,l2_reg,l1_reg,rate,act)
                     self.model.Model.append(model)
                     self.model.History.append(model.fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
                                                         steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
                                                         validation_steps=None))
 
-    def predict_on_test_set(self, threshold=0.5):
+    def predict_on_test_set(self):
 
-        X_test, y_test = self.datasets.dataset_test
-        logits = self.model.Model.predict(X_test)
+        img_dims = self.parameters.img_size
+        pred_dir = self.parameters.prediction['dir']
+        threshold = self.parameters.prediction['threshold']
+
+        # Import model
+        self.model.imported = True
+        Model, History = self.reconstruct_model()
+
+        X_test, y_test = Dataprocess.read_preset_datasets(pred_dir)
+        X_test = Dataprocess.standardize_image_size(X_test,img_dims)
+        X_test, y_test = Dataprocess.preprocess_data(X_test,y_test)
+        logits = Model.predict(X_test)
         m_test = logits.shape[0]
         y_hat = np.array([1 if logit > threshold else 0 for logit in logits])
 
@@ -319,6 +279,10 @@ class ShockWaveScanner:
             'accuracy': tf.keras.metrics.BinaryAccuracy(),
             'recall': tf.keras.metrics.Recall(),
             'precision': tf.keras.metrics.Precision(),
+            'tp': tf.keras.metrics.TruePositives(),
+            'tn': tf.keras.metrics.TrueNegatives(),
+            'fp': tf.keras.metrics.FalsePositives(),
+            'fn': tf.keras.metrics.FalseNegatives(),
             'AUC': tf.keras.metrics.AUC(),
         }
 
@@ -328,9 +292,12 @@ class ShockWaveScanner:
             metric_function = metrics_functions[key]
             metric_function.update_state(y_test,logits)
             metrics[key] = metric_function.result().numpy()
+        metrics['F1'] = 2*metrics['precision']*metrics['recall']/(metrics['precision']+metrics['recall'])
 
-        self.predictions.predictions = y_hat
-        self.predictions.score = metrics
+        metrics_name = list(metrics.keys())
+        metrics_data = list(metrics.values())
+        metrics_df = pd.DataFrame(index=metrics_name,columns=['Pred'],data=metrics_data)
+        metrics_df.to_csv(os.path.join(pred_dir,'Model_pred_metrics.csv'),sep=';',decimal='.')
 
     def export_model_performance(self, sens_var=None):
 
@@ -347,8 +314,9 @@ class ShockWaveScanner:
 
             # Loss evolution plots #
             Nepochs = self.parameters.training_parameters['epochs']
-            epochs = np.arange(1,Nepochs+1,1)
+            epochs = np.arange(1,Nepochs+1)
 
+            case_ID = self.parameters.analysis['case_ID']
             for i,h in enumerate(History):
                 loss_train = h.history['loss']
                 loss_cv = h.history['val_loss']
@@ -361,71 +329,199 @@ class ShockWaveScanner:
                 ax.set_ylabel('Loss',size=12)
                 ax.tick_params('both',labelsize=10)
                 ax.legend()
+                plt.suptitle('Loss evolution case = {}'.format(str(case_ID)))
 
                 if sens_var:
-                    storage_dir = os.path.join(self.case_dir,'Results','Model_performance','{}={:.3f}'.format(
-                                               sens_var[0],sens_var[1][i]))
+                    if type(sens_var[1][i]) == str:
+                        storage_dir = os.path.join(self.case_dir, 'Results', str(case_ID), 'Model_performance',
+                                                   '{}={}'.format(sens_var[0], sens_var[1][i]))
+                    else:
+                        storage_dir = os.path.join(self.case_dir, 'Results', str(case_ID), 'Model_performance',
+                                                   '{}={:.3f}'.format(sens_var[0], sens_var[1][i]))
+                    loss_plot_filename = 'Loss_evolution_{}_{}={}.png'.format(str(case_ID), sens_var[0],
+                                                                              str(sens_var[1][i]))
+                    loss_filename = 'Model_loss_{}_{}={}.csv'.format(str(case_ID), sens_var[0], str(sens_var[1][i]))
+                    metrics_filename = 'Model_metrics_{}_{}={}.csv'.format(str(case_ID), sens_var[0],
+                                                                           str(sens_var[1][i]))
                 else:
-                    storage_dir = os.path.join(self.case_dir,'Results','Model_performance')
+                    storage_dir = os.path.join(self.case_dir, 'Results', str(case_ID), 'Model_performance')
+                    loss_plot_filename = 'Loss_evolution_{}.png'.format(str(case_ID))
+                    loss_filename = 'Model_loss_{}.csv'.format(str(case_ID))
+                    metrics_filename = 'Model_metrics_{}.csv'.format(str(case_ID))
+
                 if os.path.exists(storage_dir):
                     rmtree(storage_dir)
                 os.makedirs(storage_dir)
-                fig.savefig(os.path.join(storage_dir,'Loss_evolution.png'),dpi=200)
+                fig.savefig(os.path.join(storage_dir, loss_plot_filename), dpi=200)
+                plt.close()
 
                 # Metrics #
-                metrics_name = [item for item in h.history if item not in ('loss','val_loss')]
-                metrics_val = [(metric,h.history[metric][0]) for metric in metrics_name if metric.startswith('val')]
-                metrics_train = [(metric,h.history[metric][0]) for metric in metrics_name if not metric.startswith('val')]
+                metrics_name = [item for item in h.history if item not in ('loss', 'val_loss')]
+                metrics_val = [(metric, h.history[metric][0]) for metric in metrics_name if metric.startswith('val')]
+                metrics_train = [(metric, h.history[metric][0]) for metric in metrics_name if
+                                 not metric.startswith('val')]
 
                 rows = [metric[0] for metric in metrics_train]
                 metric_fun = lambda L: np.array([item[1] for item in L])
-                metrics_data = np.vstack((metric_fun(metrics_train),metric_fun(metrics_val))).T
-                metrics = pd.DataFrame(index=rows,columns=['Training','CV'],data=metrics_data)
-                metrics.to_csv(os.path.join(storage_dir,'Model_metrics.csv'),sep=';',decimal='.')
+                metrics_data = np.vstack((metric_fun(metrics_train), metric_fun(metrics_val))).T
+                metrics = pd.DataFrame(index=rows, columns=['Training', 'CV'], data=metrics_data)
+                metrics.to_csv(os.path.join(storage_dir, metrics_filename), sep=';', decimal='.')
 
                 # Loss
                 loss_data = np.vstack((list(epochs), loss_train, loss_cv)).T
                 loss = pd.DataFrame(columns=['Epoch', 'Training', 'CV'], data=loss_data)
-                loss.to_csv(os.path.join(storage_dir, 'Model_loss.csv'), index=False, sep=';', decimal='.')
+                loss.to_csv(os.path.join(storage_dir, loss_filename), index=False, sep=';', decimal='.')
 
     def export_model(self, sens_var=None):
 
         if type(self.model.Model) == list:
-            N = len(sens_var[1])
-            model = self.model.Model
+            N = len(self.model.Model)
         else:
             N = 1
-            model = [self.model.Model]
-
+            self.model.History = [self.model.History]
+            self.model.Model = [self.model.Model]
+        case_ID = self.parameters.analysis['case_ID']
         for i in range(N):
             if sens_var:
-                weights_dir = os.path.join(os.path.dirname(self.case_dir),'Results','Model','{}={:.3f}'.format(sens_var[0],sens_var[1][i]))
+                if type(sens_var[1][i]) == str:
+                    storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={}'
+                                               .format(sens_var[0],sens_var[1][i]))
+                else:
+                    storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={:.3f}'
+                                               .format(sens_var[0],sens_var[1][i]))
+                model_json_name = 'SHOWDEC_model_{}_{}={}_arquitecture.json'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
+                model_weights_name = 'SHOWDEC_model_{}_{}={}_weights.h5'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
+                model_folder_name = 'SHOWDEC_model_{}_{}={}'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
             else:
-                weights_dir = os.path.join(os.path.dirname(self.case_dir),'Results','Model')
-            if os.path.exists(weights_dir):
-                rmtree(weights_dir)
-            os.makedirs(weights_dir)
+                storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model')
+                model_json_name = 'SHOWDEC_model_{}_arquitecture.json'.format(str(case_ID))
+                model_weights_name = 'SHOWDEC_model_{}_weights.h5'.format(str(case_ID))
+                model_folder_name = 'SHOWDEC_model_{}'.format(str(case_ID))
 
+            if os.path.exists(storage_dir):
+                rmtree(storage_dir)
+            os.makedirs(storage_dir)
+
+            # Export history training
+            with open(os.path.join(storage_dir,'History'),'wb') as f:
+                pickle.dump(self.model.History[i].history,f)
+
+            # Save model
             # Export model arquitecture to JSON file
-            model_json = model[i].to_json()
-            with open(os.path.join(weights_dir,'SW_model_arquitecture.json'),'w') as json_file:
+            model_json = self.model.Model[i].to_json()
+            with open(os.path.join(storage_dir,model_json_name),'w') as json_file:
                 json_file.write(model_json)
+            self.model.Model[i].save(os.path.join(storage_dir,model_folder_name.format(str(case_ID))))
 
             # Export model weights to HDF5 file
-            model[i].save_weights(os.path.join(weights_dir,'SW_model_weights.h5'))
+            self.model.Model[i].save_weights(os.path.join(storage_dir,model_weights_name))
 
-    def reconstruct_model(self):
+    def reconstruct_model_old(self):
 
-        weights_dir = os.path.join(self.case_dir,'Results','pretrained_Model')
-        # Load JSON file
-        json_file = open(os.path.join(weights_dir,'SW_model_arquitecture.json'),'r')
-        loaded_model_json = json_file.read()
-        json_file.close()
+        storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
+        try:
+            json_filename = [file for file in os.listdir(storage_dir) if file.endswith('.json')][0]
+            json_file = open(os.path.join(storage_dir,json_filename),'r')
+            loaded_model_json = json_file.read()
+            json_file.close()
 
-        # Build model
-        self.model.Model = tf.keras.models.model_from_json(loaded_model_json)
-        # Load weights into new model
-        self.model.Model.load_weights(os.path.join(weights_dir,'SW_model_weights.h5'))
+            Model = tf.keras.models.model_from_json(loaded_model_json)
+        except:
+            tf.config.run_functions_eagerly(True) # Enable eager execution
+            try:
+                model_folder = next(os.walk(storage_dir))[1][0]
+            except:
+                print('There is no model stored in the folder')
+
+            Model = tf.keras.models.load_model(os.path.join(storage_dir,model_folder))
+            tf.config.run_functions_eagerly(False) # Disable eager execution
+
+        return Model
+
+    def reconstruct_model(self, mode='train'):
+
+        storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
+        try:
+            json_filename = [file for file in os.listdir(storage_dir) if file.endswith('.json')][0]
+            json_file = open(os.path.join(storage_dir,json_filename),'r')
+            loaded_model_json = json_file.read()
+            json_file.close()
+
+            Model = tf.keras.models.model_from_json(loaded_model_json)
+
+        except:
+            img_dim = self.parameters.img_size
+            alpha = self.parameters.training_parameters['learning_rate']
+            activation = self.parameters.training_parameters['activation']
+
+            # Load weights into new model
+            Model = models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
+            weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
+            Model.load_weights(os.path.join(storage_dir,weights_filename))
+
+        # Reconstruct history
+        class history_container:
+            pass
+        History = history_container()
+        try:
+            with open(os.path.join(storage_dir,'History'),'rb') as f:
+                History.history = pickle.load(f)
+            History.epoch = np.arange(1,len(History.history['loss'])+1)
+            History.model = Model
+        except:
+            History.epoch = None
+            History.model = None
+
+        return Model, History
+
+    def export_nn_log(self):
+
+        training = OrderedDict()
+        training['TRAINING SIZE'] = self.parameters.training_parameters['train_size']
+        training['LEARNING RATE'] = self.parameters.training_parameters['learning_rate']
+        training['L2 REGULARIZER'] = self.parameters.training_parameters['l2_reg']
+        training['L1 REGULARIZER'] = self.parameters.training_parameters['l1_reg']
+        training['DROPOUT'] = self.parameters.training_parameters['dropout']
+        training['ACTIVATION'] = self.parameters.training_parameters['activation']
+        training['NUMBER OF EPOCHS'] = self.parameters.training_parameters['epochs']
+        training['BATCH SIZE'] = self.parameters.training_parameters['batch_size']
+        training['OPTIMIZER'] = [model.optimizer._name for model in self.model.Model]
+        training['METRICS'] = [model.metrics_names[-1] if model.metrics_names != None else None for model in self.model.Model]
+
+        analysis = OrderedDict()
+        analysis['CASE ID'] = self.parameters.analysis['case_ID']
+        analysis['ANALYSIS'] = self.parameters.analysis['type']
+        analysis['IMPORTED MODEL'] = self.parameters.analysis['import']
+        analysis['LAST TRAINING LOSS'] = ['{:.3f}'.format(history.history['loss'][-1]) for history in self.model.History]
+        analysis['LAST CV LOSS'] = ['{:.3f}'.format(history.history['val_loss'][-1]) for history in self.model.History]
+
+        architecture = OrderedDict()
+        architecture['INPUT SHAPE'] = self.parameters.img_size
+
+        case_ID = self.parameters.analysis['case_ID']
+        storage_folder = os.path.join(self.case_dir, 'Results', str(case_ID))
+        if os.path.exists(storage_folder):
+            rmtree(storage_folder)
+        os.makedirs(storage_folder)
+        with open(os.path.join(storage_folder, 'SHOWDEC.log'), 'w') as f:
+            f.write('SHOWDEC log file\n')
+            f.write('==================================================================================================\n')
+            f.write('->ANALYSIS\n')
+            for item in analysis.items():
+                f.write('>' + item[0] + '=' + str(item[1]) + '\n')
+            f.write('--------------------------------------------------------------------------------------------------\n')
+            f.write('->TRAINING\n')
+            for item in training.items():
+                f.write('>' + item[0] + '=' + str(item[1]) + '\n')
+            f.write('--------------------------------------------------------------------------------------------------\n')
+            f.write('->ARCHITECTURE\n')
+            for item in architecture.items():
+                f.write(item[0] + '=' + str(item[1]) + '\n')
+            f.write('--------------------------------------------------------------------------------------------------\n')
+            f.write('->MODEL\n')
+            for model in self.model.Model:
+                model.summary(print_fn=lambda x: f.write(x + '\n'))
+            f.write('==================================================================================================\n')
 
 
 if __name__ == '__main__':

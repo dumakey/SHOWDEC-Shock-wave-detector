@@ -2,42 +2,44 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Case folders %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-DATADIR=C:\Users\juan.ramos\Shock_wave_detector\Datasets\Datasets
+DATADIR=C:\Users\juan.ramos\Shock_wave_detector
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-TYPEANALYSIS=SINGLETRAINING   % SINGLETRAINING, SENSANALYSIS, DATAGEN, 
+TYPEANALYSIS=SINGLETRAINING   % SINGLETRAINING, SENSANALYSIS, PREDICT, DATAGEN, PLOTACTIVATIONS 
 IMPORTMODEL=0
-AUGDATASETID=1  % Augmented dataset ID. 0 in case no addition of augmented dataset
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Training parameters
 TRAINSIZE=0.75
-LEARNINGRATE=0.005
+LEARNINGRATE=0.003
 L2REG=0.05
 L1REG=NONE
-DROPOUT=0.35
-EPOCHS=20
+DROPOUT=0.0
+EPOCHS=70
 BATCHSIZE=32
-ADDAUGMENTED=0
-ADDAUGDATAID=1
+ACTIVATION=SWISH  # NONE, RELU, ELU, LEAKYRELU, SWISH, SIGMOID, TANH
+# When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH
+ADDAUGMENTED=1
+ADDAUGDATAID=4,5
   
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Dataset Augmentation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-AUGDATA=0
-AUGDATASIZE=0.2
+AUGDATA=1
+AUGDATASIZE=1
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Image processing %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-IMAGERESIZE=(400,300)  % (width, height)
+IMAGERESIZE=(200,150)  % (width, height)
+%IMAGERESIZE=(400,300)  % (width, height)
 % Rotation
-ROTATION=1
+ROTATION=0
 ROTATIONCENTER=(NONE,NONE)
-ROTATIONANGLE=15
+ROTATIONANGLE=90
 % Zoom
-ZOOM=0
-ZOOMFACTOR=1.5
+ZOOM=1
+ZOOMFACTOR=4.0
 % Translation
 TRANSLATION=0
 TRANSLATIONDIST=(0,0)
@@ -49,6 +51,18 @@ FILTERPARAM=(SIZE,5,SIGMA,3)
 % Flip
 FLIP=0
 FLIPTYPE=HORIZONTAL
-FLIPTYPE=VERTICAL
+%FLIPTYPE=VERTICAL
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Activation plotting  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+NCOLS=3
+ROWS2COLS=1
+NSAMPLESACT=1
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Prediction %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DATAPREDDIR=C:\Users\juan.ramos\Shock_wave_detector\Datasets\Datasets_test
+THRESHOLD=0.5
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

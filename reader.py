@@ -1,8 +1,10 @@
 import re
+from random import randint
 
 def read_case_setup(launch_filepath):
     file = open(launch_filepath, 'r')
     data = file.read()
+    data = re.sub('%.*\n','',data)
 
     class setup:
         pass
@@ -10,9 +12,7 @@ def read_case_setup(launch_filepath):
     casedata = setup()
     casedata.case_dir = None
     casedata.analysis = dict.fromkeys(['type', 'import', 'augD_ID'], None)
-    casedata.training_parameters = \
-        dict.fromkeys(['train_size', 'learning_rate', 'l2_reg', 'l1_reg', 'dropout', 'epochs', 'batch_size'], None)
-    casedata.training_parameters.update({'addaugdata': [None, None]})
+    casedata.training_parameters = {'addaugdata': [None, None]}
     casedata.img_resize = [None,None]
     casedata.img_processing = {'rotation': [None, None, None, None],
                                'translation': [None, None, None],
@@ -21,17 +21,20 @@ def read_case_setup(launch_filepath):
                                'flip': [None, None]
                                }
     casedata.data_augmentation = [None, None]
+    casedata.activation_plotting = {'n_samples': None, 'n_cols': None, 'rows2cols_ratio': None}
+    casedata.prediction = {'n_samples': None}
 
-    ## Data directory
+    ############################################### Data directory #####################################################
     match = re.search('DATADIR\s*=\s*(.*).*', data)
     if match:
         casedata.case_dir = match.group(1)
 
-    ## Analysis
+    ################################################## Analysis ########################################################
+    casedata.analysis['case_ID'] = randint(1,9999)
     # Type of analysis
     match = re.search('TYPEANALYSIS\s*=\s*(\w+).*', data)
     if match:
-        casedata.analysis['type'] = match.group(1)
+        casedata.analysis['type'] = str.lower(match.group(1))
 
     # Import
     match = re.search('IMPORTMODEL\s*=\s*(\d).*', data)
@@ -46,7 +49,7 @@ def read_case_setup(launch_filepath):
         if match_factor:
             casedata.data_augmentation[1] = float(match_factor.group(1))
 
-    ## Training parameters
+    ############################################# Training parameters ##################################################
     # Training dataset size
     match = re.search('TRAINSIZE\s*=\s*(\d+\.?\d*|NONE).*', data)
     if match:
@@ -55,40 +58,44 @@ def read_case_setup(launch_filepath):
         else:
             casedata.training_parameters['train_size'] = float(match.group(1))
 
-    # Learning rate
-    match = re.search('LEARNINGRATE\s*=\s*(\d+\.?\d*|NONE).*', data)
+        # Learning rate
+    match = re.search('LEARNINGRATE\s*=\s*(.*)', data)
     if match:
-        if match.group(1) == 'NONE':
-            casedata.training_parameters['learning_rate'] = 0.001
-        else:
-            casedata.training_parameters['learning_rate'] = float(match.group(1))
-
+        matches = re.findall('(\d+\.?\d*)', match.group(1))
+        casedata.training_parameters['learning_rate'] = float(matches[0]) if len(matches) == 1 else [float(item) for
+                                                                                                     item in matches]
     # L2 regularizer
-    match = re.search('L2REG\s*=\s*(\d+\.?\d*|NONE).*', data)
+    match = re.search('L2REG\s*=\s*(.*|NONE)', data)
     if match:
-        if match.group(1) == 'NONE':
-            casedata.training_parameters['l2_reg'] = 0.0
+        matches = re.findall('(\d+\.?\d*)', match.group(1))
+        if matches:
+            casedata.training_parameters['l2_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item
+                                                                                                  in matches]
         else:
-            casedata.training_parameters['l2_reg'] = float(match.group(1))
+            casedata.training_parameters['l2_reg'] = 0.0
 
     # L1 regularizer
-    match = re.search('L1REG\s*=\s*(\d+\.?\d*|NONE).*', data)
+    match = re.search('L1REG\s*=\s*(.*|NONE)', data)
     if match:
-        if match.group(1) == 'NONE':
-            casedata.training_parameters['l1_reg'] = 0.0
+        matches = re.findall('(\d+\.?\d*)', match.group(1))
+        if matches:
+            casedata.training_parameters['l1_reg'] = float(matches[0]) if len(matches) == 1 else [float(item) for item
+                                                                                                  in matches]
         else:
-            casedata.training_parameters['l1_reg'] = float(match.group(1))
+            casedata.training_parameters['l1_reg'] = 0.0
 
     # Dropout
-    match = re.search('DROPOUT\s*=\s*(\d+\.?\d*|NONE).*', data)
+    match = re.search('DROPOUT\s*=\s*(.*|NONE)', data)
     if match:
-        if match.group(1) == 'NONE':
-            casedata.training_parameters['dropout'] = 0.0
+        matches = re.findall('(\d+\.?\d*)', match.group(1))
+        if matches:
+            casedata.training_parameters['dropout'] = float(matches[0]) if len(matches) == 1 else [float(item) for item
+                                                                                                   in matches]
         else:
-            casedata.training_parameters['dropout'] = float(match.group(1))
+            casedata.training_parameters['dropout'] = 0.0
 
     # Number of epochs
-    match = re.search('EPOCHS\s*=\s*(\d+\.?\d*|NONE).*', data)
+    match = re.search('EPOCHS\s*=\s*(\d+|NONE).*', data)
     if match:
         if match.group(1) == 'NONE':
             casedata.training_parameters['epochs'] = 1
@@ -102,16 +109,28 @@ def read_case_setup(launch_filepath):
             casedata.training_parameters['batch_size'] = None
         else:
             casedata.training_parameters['batch_size'] = int(match.group(1))
+            
+    # Activation function
+    match = re.search('ACTIVATION\s*=\s*((\w+)\s*,?\s*(\w+)*)\s*.*', data)
+    if match:
+        if None in match.groups():
+            casedata.training_parameters['activation'] = str.lower(match.group(2))
+        else:
+            casedata.training_parameters['activation'] = [str.lower(item) for item in match.groups()[1:]]
 
     # Add (existing) augmented dataset
     match = re.search('ADDAUGMENTED\s*=\s*(\d).*', data)
     if match:
         casedata.training_parameters['addaugdata'][0] = int(match.group(1))
-        match_factor = re.search('ADDAUGDATAID\s*=\s*(\d+\.?\d*).*', data)
-        if match_factor:
-            casedata.training_parameters['addaugdata'][1] = int(match_factor.group(1))
+        match_group = re.search('ADDAUGDATAID\s*=\s*(.*)',data)
+        if match_group:
+            matches = re.findall('(\d+)',match_group.group(1))
+            if matches:
+                casedata.training_parameters['addaugdata'][1] = int(matches[0]) if len(matches) == 1 else [int(item) for item
+                                                                                                      in matches]
 
-    ## Image processing parameters
+
+    ######################################## Image processing parameters ###############################################
     # Image resize
     match_dist = re.search('IMAGERESIZE\s*=\s*\((\d+|NONE)\,+(\d+|NONE)\).*', data)
     if match_dist:
@@ -154,14 +173,14 @@ def read_case_setup(launch_filepath):
     if match:
         casedata.img_processing['filter'][0] = int(match.group(1))
         match_type = re.search('FILTERTYPE\s*=\s*(\w+).*', data)
-        casedata.img_processing['filter'][1] = match_type.group(1)
+        casedata.img_processing['filter'][1] = str.lower(match_type.group(1))
         if match_type:
-            if match_type.group(1) == 'GAUSSIAN':
+            if str.lower(match_type.group(1)) == 'gaussian':
                 filter_param = re.search(
                     'FILTERPARAM\s*=\s*\(\s*SIZE\s*\,\s*(\d+|NONE)\s*\,\s*SIGMA\s*\,\s*(\d+|NONE)\s*\).*', data)
                 casedata.img_processing['filter'][2] = int(filter_param.group(1))
                 casedata.img_processing['filter'][3] = int(filter_param.group(2))
-        elif match_type.group(1) == 'BILATERAL':
+        elif str.lower(match_type.group(1)) == 'bilateral':
             filter_param = re.search(
                 'FILTERPARAM\s*=\s*\(\s*(D)\s*\,\s*(\d+|NONE)\s*\,\s*SIGMACOLOR\s*\,\s*(\d+|NONE)\s*SIGMASPACE\s*\,\s*(\d+|NONE)\s*\).*',
                 data)
@@ -175,6 +194,35 @@ def read_case_setup(launch_filepath):
         casedata.img_processing['flip'][0] = int(match.group(1))
         match_type = re.search('FLIPTYPE\s*=\s*(\w+).*', data)
         if match_type:
-            casedata.img_processing['flip'][1] = match_type.group(1)
+            casedata.img_processing['flip'][1] = str.lower(match_type.group(1))
+
+    ######################################### Activation plotting parameters ###########################################
+    # Number of samples
+    match = re.search('NSAMPLESACT\s*=\s*(\d+).*', data)
+    if match:
+        casedata.activation_plotting['n_samples'] = int(match.group(1))
+
+    # Number of columns
+    match = re.search('NCOLS\s*=\s*(\d+).*', data)
+    if match:
+        casedata.activation_plotting['n_cols'] = int(match.group(1))
+
+    # Rows-to-columns figure ratio
+    match = re.search('ROWS2COLS\s*=\s*(\d+).*', data)
+    if match:
+        casedata.activation_plotting['rows2cols_ratio'] = int(match.group(1))
+
+    ############################################ Prediction parameters #################################################
+    match = re.search('DATAPREDDIR\s*=\s*(.*).*',data)
+    if match:
+        casedata.prediction['dir'] = match.group(1)
+
+    # Prediction threshold
+    match = re.search('THRESHOLD\s*=\s*(\d+\.?\d*|NONE).*', data)
+    if match:
+        if match.group(1) == 'NONE':
+            casedata.prediction['threshold'] = 0.5
+        else:
+            casedata.prediction['threshold'] = float(match.group(1))
 
     return casedata
