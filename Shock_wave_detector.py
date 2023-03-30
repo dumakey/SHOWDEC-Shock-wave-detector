@@ -268,7 +268,7 @@ class ShockWaveScanner:
         self.model.imported = True
         Model, History = self.reconstruct_model()
 
-        X_test, y_test = Dataprocess.read_preset_datasets(pred_dir)
+        X_test, y_test, paths_test = Dataprocess.read_preset_datasets(pred_dir,return_filepaths=True)
         X_test = Dataprocess.standardize_image_size(X_test,img_dims)
         X_test, y_test = Dataprocess.preprocess_data(X_test,y_test)
         logits = Model.predict(X_test)
@@ -298,6 +298,9 @@ class ShockWaveScanner:
         metrics_data = list(metrics.values())
         metrics_df = pd.DataFrame(index=metrics_name,columns=['Pred'],data=metrics_data)
         metrics_df.to_csv(os.path.join(pred_dir,'Model_pred_metrics.csv'),sep=';',decimal='.')
+
+        paths_df = pd.DataFrame(index=paths_test,columns=['Ground_truth','Prediction'],data=np.array([y_test,y_hat]).T)
+        paths_df.to_csv(os.path.join(pred_dir,'Model_predictions.csv'),sep=';',decimal='.')
 
     def export_model_performance(self, sens_var=None):
 
