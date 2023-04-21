@@ -67,8 +67,8 @@ def monitor_hidden_layers(img, model, case_dir, figs_per_row=5, rows_to_cols_rat
                 plt.suptitle('Layer: {}'.format(layer_name),fontsize=18)
                 plt.axis('off')
                 plt.imshow(display_grid[j*height*n_rows:(j+1)*height*n_rows,:],aspect='auto',cmap='viridis')   # cmap: plasma / viridis
-                plt.savefig(os.path.join(storage_dir,'Case_{:d}_layer_{:d}_{}_activations_{}.png'.
-                                         format(case_ID,layer_idx,layer_name,(j+1))), dpi=150)
+                plt.savefig(os.path.join(storage_dir,'Layer_{:d}_{}_activations_{}.png'.
+                                         format(layer_idx,layer_name,(j+1))), dpi=150)
                 plt.close()
 
         layer_idx += 1

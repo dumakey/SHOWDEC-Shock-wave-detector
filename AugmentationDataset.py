@@ -1,4 +1,4 @@
-import Preprocessing
+from Preprocessing import ImageTransformer
 from random import sample
 import os
 from shutil import rmtree
@@ -27,7 +27,7 @@ class datasetAugmentationClass:
         N = self.X_out.shape[0]
         sampling_distribution = sample(range(m),N)
         for i, idx in enumerate(sampling_distribution):
-            img_transformer = Preprocessing.ImageTransformer(self.operations)
+            img_transformer = ImageTransformer(self.operations)
             self.X_out[i,:,:,:] = img_transformer.launch_transform_operation(self.X_in[idx,:,:,:])
             self.y_out[i] = self.y_in[idx]
 

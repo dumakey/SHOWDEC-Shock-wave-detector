@@ -107,26 +107,23 @@ class ImageTransformer:
 
         return translated_image
 
-    def flip(self, image, axis):
+    def flip(self, image, axis, plot=False):
 
         if axis == 'horizontal':
             flipped_image = np.flip(image,axis=0)
         elif axis == 'vertical':
             flipped_image = np.flip(image, axis=1)
 
+        if plot == True:
+            cv.imshow('Flipped', flipped_image)
+            cv.waitKey(0)
+            
         return flipped_image
 
     def filter(self, image, kernel_name=None, kernel_parameters=None, plot=False):
 
-        if kernel_name == None:
-            kernel_name = self.transformation_parameters['blur']['kernel']
-            if kernel_name in ['gaussian','median','bilateral']:
-                kernel_parameters = self.transformation_parameters['blur']['parameters']
-            else:
-                kernel_parameters = None
-
         if kernel_name == 'gaussian':
-            kernel_size = kernel_parameters['size']  # kernel size
+            kernel_size = kernel_parameters['ksize']  # kernel size
             sigma = kernel_parameters['sigma']  # kernel sigma
 
             filtered_image = cv.GaussianBlur(image,(kernel_size,kernel_size),sigma)
@@ -180,6 +177,7 @@ class ImageTransformer:
 
     def launch_transform_operation(self, image):
 
+        plot_transformation = False 
         operation_functions = {
             'resizing': self.resize,
             'rotation': self.rotate,
@@ -191,7 +189,7 @@ class ImageTransformer:
 
         for ID in self.transformation_parameters.keys():
             F = operation_functions[ID]
-            fun_args = self.transformation_parameters[ID]
+            fun_args = self.transformation_parameters[ID] + [plot_transformation]
             image = F(image,*fun_args)
 
         return image

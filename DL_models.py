@@ -5,6 +5,41 @@ import tensorflow as tf
 def swish(x, beta=1):
     return (x * tf.keras.backend.sigmoid(beta * x))
 
+def f1_score(y_true, y_pred):
+
+    def recall_m(y_true, y_pred):
+        true_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_true*y_pred,0,1)))
+        possible_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_true,0,1)))
+        recall = true_positives/(possible_positives + tf.keras.backend.epsilon())
+
+        return recall
+
+    def precision_m(y_true, y_pred):
+        true_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_true*y_pred,0,1)))
+        predicted_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_pred,0,1)))
+        precision = true_positives/(predicted_positives + tf.keras.backend.epsilon())
+
+        return precision
+
+    precision = precision_m(y_true,y_pred)
+    recall = recall_m(y_true,y_pred)
+
+    return 2 * ((precision*recall)/(precision + recall + tf.keras.backend.epsilon()))
+
+def recall_m(y_true, y_pred):
+    true_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_true*y_pred,0,1)))
+    possible_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_true,0,1)))
+    recall = true_positives/(possible_positives + tf.keras.backend.epsilon())
+
+    return recall
+
+def precision_m(y_true, y_pred):
+    true_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_true*y_pred,0,1)))
+    predicted_positives = tf.keras.backend.sum(tf.keras.backend.round(tf.keras.backend.clip(y_pred,0,1)))
+    precision = true_positives/(predicted_positives + tf.keras.backend.epsilon())
+
+    return precision
+        
 def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
 
     if kwargs:
@@ -22,15 +57,16 @@ def conv2D_block(X, num_channels, f, p, s, dropout, **kwargs):
     else:
         net = X
     net = tf.keras.layers.Conv2D(num_channels,kernel_size=f,strides=s,padding='valid',
-                                 kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
+                                 kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
     net = tf.keras.layers.BatchNormalization()(net)
     
     if activation == 'leakyrelu':
+        rate = 0.1
         net = tf.keras.layers.LeakyReLU(rate)(net)
     elif activation == 'swish':
         net = tf.keras.layers.Activation('swish')(net)
     elif activation == 'elu':
-        net = tf.keras.layers.ELU(net)
+        net = tf.keras.layers.ELU()(net)
     elif activation == 'tanh':
         net = tf.keras.activations.tanh(net)
     elif activation == 'sigmoid':
@@ -83,17 +119,26 @@ def slice_scanner_inception_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dr
                           reg=l2_reg)
     net = tf.keras.layers.Flatten()(net)
     net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
+    if activation != 'leakyrelu':
+        net = tf.keras.layers.Activation(activation)(net)
+    else:
+        net = tf.keras.layers.LeakyReLU()(net)
     net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
+    net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
     net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
+    if activation != 'leakyrelu':
+        net = tf.keras.layers.Activation(activation)(net)
+    else:
+        net = tf.keras.layers.LeakyReLU()(net)
     net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
+    net = tf.keras.layers.Dense(units=50,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
     net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
+    if activation != 'leakyrelu':
+        net = tf.keras.layers.Activation(activation)(net)
+    else:
+        net = tf.keras.layers.LeakyReLU()(net)
     net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
+    net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
     model = tf.keras.Model(inputs=X_input,outputs=net,name='Inception_SliceScanner')
 
     model.summary()
@@ -107,68 +152,41 @@ def slice_scanner_inception_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dr
 
     return model
     
-def slice_scanner_lenet_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu'):
+def slice_scanner_simple_cnn_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu'):
 
     input_shape = tuple(image_shape.as_list() + [3])
     X_input = tf.keras.layers.Input(shape=input_shape)
-    net = conv2D_block(X_input,num_channels=6,f=5,p=0,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+    net = conv2D_block(X_input,num_channels=64,f=5,p=0,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
                                                                                   'activation':activation})
-    net = tf.keras.layers.AvgPool2D(pool_size=2,strides=2)(net)
-    net = conv2D_block(net,num_channels=16,f=5,p=0,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
-                                                                               'activation':activation})
-    net = tf.keras.layers.AvgPool2D(pool_size=2,strides=2)(net)
+    net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
+    #net = conv2D_block(net,num_channels=64,f=3,p=5,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+    #                                                                              'activation':activation})
+    #net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
+    #net = conv2D_block(net,num_channels=128,f=5,p=0,s=2,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
+    #                                                                              'activation':activation})
+    #net = tf.keras.layers.MaxPool2D(pool_size=2,strides=2)(net)
     net = tf.keras.layers.Flatten()(net)
     net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=120,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
+    net = tf.keras.layers.Dense(units=1024,activation=None,kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
     net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
+    if activation == 'leakyrelu':
+        rate = 0.1
+        net = tf.keras.layers.LeakyReLU(rate)(net)
+    elif activation == 'elu':
+        net = tf.keras.layers.ELU()(net)
+    else:
+        net = tf.keras.layers.Activation(activation)(net)
     net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=84,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
-    net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
-    net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
-
-    model = tf.keras.Model(inputs=X_input,outputs=net,name='LeNetSliceScanner')
+    net = tf.keras.layers.Dense(units=1,activation='sigmoid',kernel_regularizer=tf.keras.regularizers.L1L2(l1=l1_reg,l2=l2_reg))(net)
+    
+    model = tf.keras.Model(inputs=X_input,outputs=net,name='CNNScanner')
     model.summary()
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=alpha,beta_1=0.9,beta_2=0.999,amsgrad=False)
     model.compile(optimizer=optimizer,loss=tf.keras.losses.BinaryCrossentropy(),
-                  metrics = [
-                             tf.keras.metrics.BinaryAccuracy(),
+                  metrics = [tf.keras.metrics.BinaryAccuracy(),
                              tf.keras.metrics.Precision(),
                              tf.keras.metrics.Recall(),
-                             tf.keras.metrics.AUC()]
-                  )
-
-    return model
-    
-def slice_scanner_conv_model(image_shape, alpha, l2_reg=0.0, l1_reg=0.0, dropout=0.0, activation='relu'):
-
-    input_shape = tuple(image_shape.as_list() + [3])
-    X_input = tf.keras.layers.Input(shape=input_shape)
-    net = conv2D_block(X_input,num_channels=48,f=11,p=0,s=4,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
-                                                                                    'activation':activation})
-    net = tf.keras.layers.MaxPool2D(pool_size=3,strides=2)(net)
-    net = conv2D_block(net,num_channels=96,f=5,p=2,s=1,dropout=dropout,kwargs={'l2_reg':l2_reg,'l1_reg':l1_reg,
-                                                                               'activation':activation})
-    net = tf.keras.layers.MaxPool2D(pool_size=3,strides=2)(net)
-    net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=120,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
-    net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
-    net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=84,activation=None,kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
-    net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation(activation)(net)
-    net = tf.keras.layers.Dropout(dropout)(net)
-    net = tf.keras.layers.Dense(units=1,activation='sigmoid', kernel_regularizer=tf.keras.regularizers.l2(l2_reg))(net)
-    model = tf.keras.Model(inputs=X_input,outputs=net,name='ConvSliceScanner')
-
-    model.summary()
-    optimizer = tf.keras.optimizers.Adam(learning_rate=alpha,beta_1=0.9,beta_2=0.999,amsgrad=False)
-    model.compile(optimizer=optimizer,loss=tf.keras.losses.BinaryCrossentropy(),
-                  metrics=[tf.keras.metrics.BinaryAccuracy(),tf.keras.metrics.AUC()])
+                             ])
 
     return model

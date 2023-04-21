@@ -17,7 +17,7 @@ def read_case_setup(launch_filepath):
     casedata.img_processing = {'rotation': [None, None, None, None],
                                'translation': [None, None, None],
                                'zoom': [None, None],
-                               'filter': [None, None, None, None, None],
+                               'filter': [None, None, None],
                                'flip': [None, None]
                                }
     casedata.data_augmentation = [None, None]
@@ -126,7 +126,7 @@ def read_case_setup(launch_filepath):
         if match_group:
             matches = re.findall('(\d+)',match_group.group(1))
             if matches:
-                casedata.training_parameters['addaugdata'][1] = int(matches[0]) if len(matches) == 1 else [int(item) for item
+                casedata.training_parameters['addaugdata'][1] = [int(matches[0])] if len(matches) == 1 else [int(item) for item
                                                                                                       in matches]
 
 
@@ -175,18 +175,21 @@ def read_case_setup(launch_filepath):
         match_type = re.search('FILTERTYPE\s*=\s*(\w+).*', data)
         casedata.img_processing['filter'][1] = str.lower(match_type.group(1))
         if match_type:
-            if str.lower(match_type.group(1)) == 'gaussian':
+            filtertype = str.lower(match_type.group(1))
+            if filtertype == 'gaussian' or filtertype == 'median':
                 filter_param = re.search(
                     'FILTERPARAM\s*=\s*\(\s*SIZE\s*\,\s*(\d+|NONE)\s*\,\s*SIGMA\s*\,\s*(\d+|NONE)\s*\).*', data)
-                casedata.img_processing['filter'][2] = int(filter_param.group(1))
-                casedata.img_processing['filter'][3] = int(filter_param.group(2))
-        elif str.lower(match_type.group(1)) == 'bilateral':
-            filter_param = re.search(
-                'FILTERPARAM\s*=\s*\(\s*(D)\s*\,\s*(\d+|NONE)\s*\,\s*SIGMACOLOR\s*\,\s*(\d+|NONE)\s*SIGMASPACE\s*\,\s*(\d+|NONE)\s*\).*',
-                data)
-            casedata.img_processing['filter'][2] = int(filter_param.group(1))
-            casedata.img_processing['filter'][3] = int(filter_param.group(2))
-            casedata.img_processing['filter'][4] = int(filter_param.group(3))
+                casedata.img_processing['filter'][2] = {}
+                casedata.img_processing['filter'][2]['ksize'] = int(filter_param.group(1))
+                casedata.img_processing['filter'][2]['sigma'] = int(filter_param.group(2)) if filtertype == 'gaussian' else None
+            elif str.lower(match_type.group(1)) == 'bilateral':
+                filter_param = re.search(
+                    'FILTERPARAM\s*=\s*\(\s*D\s*\,\s*(\d+|NONE)\s*\,\s*SIGMACOLOR\s*\,\s*(\d+|NONE)\s*\,\s*SIGMASPACE\s*\,\s*(\d+|NONE)\s*\).*',
+                    data)
+                casedata.img_processing['filter'][2] = {}
+                casedata.img_processing['filter'][2]['d'] = int(filter_param.group(1))
+                casedata.img_processing['filter'][2]['sigmaColor'] = int(filter_param.group(2))
+                casedata.img_processing['filter'][2]['sigmaSpace'] = int(filter_param.group(3))
 
     # Flip
     match = re.search('FLIP\s*=\s*(\d).*', data)

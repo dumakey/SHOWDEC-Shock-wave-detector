@@ -81,10 +81,10 @@ def standardize_image_size(X, img_dims):
 
     return X_resized
 
-def read_preset_datasets(case_dir, dataset_ID=None):
+def read_preset_datasets(case_dir, dataset_ID=None, return_filepaths=False):
 
     if dataset_ID == None:
-        dataset_dir = [os.path.join(case_dir,'Dataset')]
+        dataset_dir = [case_dir]
     else:
         dataset_dir = [os.path.join(case_dir,'Dataset_{}'.format(i)) for i in dataset_ID]
 
@@ -102,7 +102,10 @@ def read_preset_datasets(case_dir, dataset_ID=None):
     X = np.array(X)
     y = np.array(y,dtype=int)
 
-    return X, y
+    if return_filepaths:
+        return X, y, files
+    else:
+        return X, y
 
 def get_test_dataset(case_dir, img_dims):
 

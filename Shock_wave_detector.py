@@ -11,7 +11,6 @@ from shutil import rmtree
 from random import randint
 
 import DL_models as models
-from Preprocessing import ImageTransformer
 import Dataset_processing as Dataprocess
 import AugmentationDataset as ADS
 import reader
@@ -47,7 +46,9 @@ class ShockWaveScanner:
         self.case_dir = casedata.case_dir
 
         # Sensitivity analysis variable identification
-        sens_vars = [parameter for parameter in self.parameters.training_parameters.items() if type(parameter[1]) == list]
+        sens_vars = [parameter for parameter in self.parameters.training_parameters.items()
+                     if type(parameter[1]) == list
+                     if parameter[0] != 'addaugdata']
         if len(sens_vars) != 0:
             self.parameters.sens_variable = sens_vars[0]
         else:
@@ -148,7 +149,7 @@ class ShockWaveScanner:
         figs_per_row = self.parameters.activation_plotting['n_cols']
         rows_to_cols_ratio = self.parameters.activation_plotting['rows2cols_ratio']
         storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
-
+        
         # Generate datasets
         self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
             Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
@@ -183,7 +184,7 @@ class ShockWaveScanner:
         # Plot
         for idx in idx_set:
             img = dataset[idx,:]
-            Postprocessing.monitor_hidden_layers(img,model,case_dir,figs_per_row,rows_to_cols_ratio)
+            Postprocessing.monitor_hidden_layers(img,model,case_dir,figs_per_row,rows_to_cols_ratio,idx)
 
     def generate_augmented_data(self, transformations, augmented_dataset_size=1):
 
@@ -211,7 +212,8 @@ class ShockWaveScanner:
         image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
         activation = self.parameters.training_parameters['activation']
 
-        Model = models.slice_scanner_lenet_model
+        #Model = models.slice_scanner_lenet_model
+        Model = models.slice_scanner_simple_cnn_model
         #Model = models.slice_scanner_inception_model
 
         self.model.Model = []
@@ -268,12 +270,10 @@ class ShockWaveScanner:
         self.model.imported = True
         Model, History = self.reconstruct_model()
 
-        X_test, y_test, paths_test = Dataprocess.read_preset_datasets(pred_dir,return_filepaths=True)
-        X_test = Dataprocess.standardize_image_size(X_test,img_dims)
-        X_test, y_test = Dataprocess.preprocess_data(X_test,y_test)
-        logits = Model.predict(X_test)
-        m_test = logits.shape[0]
-        y_hat = np.array([1 if logit > threshold else 0 for logit in logits])
+        results_dir = os.path.join(pred_dir,'Results')
+        if os.path.exists(results_dir):
+            rmtree(results_dir)
+        os.makedirs(results_dir)
 
         metrics_functions = {
             'accuracy': tf.keras.metrics.BinaryAccuracy(),
@@ -286,21 +286,29 @@ class ShockWaveScanner:
             'AUC': tf.keras.metrics.AUC(),
         }
 
-        metrics = dict.fromkeys(metrics_functions)
+        pred_cases = [folder for folder in os.listdir(pred_dir) if folder.startswith('Dataset')]
+        for pred_case in pred_cases:
+            metrics = dict.fromkeys(metrics_functions)
 
-        for key in metrics.keys():
-            metric_function = metrics_functions[key]
-            metric_function.update_state(y_test,logits)
-            metrics[key] = metric_function.result().numpy()
-        metrics['F1'] = 2*metrics['precision']*metrics['recall']/(metrics['precision']+metrics['recall'])
+            X_test, y_test, paths_test = Dataprocess.read_preset_datasets(os.path.join(pred_dir,pred_case),return_filepaths=True)
+            X_test = Dataprocess.standardize_image_size(X_test,img_dims)
+            X_test, y_test = Dataprocess.preprocess_data(X_test,y_test)
+            logits = Model.predict(X_test)
+            m_test = logits.shape[0]
+            y_hat = np.array([1 if logit > threshold else 0 for logit in logits])
+            for key in metrics.keys():
+                metric_function = metrics_functions[key]
+                metric_function.update_state(y_test,logits)
+                metrics[key] = metric_function.result().numpy()
+            metrics['F1'] = 2*metrics['precision']*metrics['recall']/(metrics['precision']+metrics['recall'])
 
-        metrics_name = list(metrics.keys())
-        metrics_data = list(metrics.values())
-        metrics_df = pd.DataFrame(index=metrics_name,columns=['Pred'],data=metrics_data)
-        metrics_df.to_csv(os.path.join(pred_dir,'Model_pred_metrics.csv'),sep=';',decimal='.')
+            metrics_name = list(metrics.keys())
+            metrics_data = list(metrics.values())
+            metrics_df = pd.DataFrame(index=metrics_name,columns=['Pred'],data=metrics_data)
+            metrics_df.to_csv(os.path.join(results_dir,'%s_model_pred_metrics.csv' %pred_case),sep=';',decimal='.')
 
-        paths_df = pd.DataFrame(index=paths_test,columns=['Ground_truth','Prediction'],data=np.array([y_test,y_hat]).T)
-        paths_df.to_csv(os.path.join(pred_dir,'Model_predictions.csv'),sep=';',decimal='.')
+            paths_df = pd.DataFrame(index=paths_test,columns=['Ground_truth','Prediction'],data=np.array([y_test,y_hat]).T)
+            paths_df.to_csv(os.path.join(results_dir,'%s_model_predictions.csv' %pred_case),sep=';',decimal='.')
 
     def export_model_performance(self, sens_var=None):
 
@@ -489,7 +497,10 @@ class ShockWaveScanner:
         training['NUMBER OF EPOCHS'] = self.parameters.training_parameters['epochs']
         training['BATCH SIZE'] = self.parameters.training_parameters['batch_size']
         training['OPTIMIZER'] = [model.optimizer._name for model in self.model.Model]
-        training['METRICS'] = [model.metrics_names[-1] if model.metrics_names != None else None for model in self.model.Model]
+        training['METRICS'] = [model.metrics_names if model.metrics_names != None else None for model in self.model.Model]
+        training['DATASET_AUGMENTATION'] = bool(self.parameters.training_parameters['addaugdata'][0])
+        if training['DATASET_AUGMENTATION'] == 1:
+            training['DATASET_AUGMENTATION_ID'] = self.parameters.training_parameters['addaugdata'][1]
 
         analysis = OrderedDict()
         analysis['CASE ID'] = self.parameters.analysis['case_ID']
