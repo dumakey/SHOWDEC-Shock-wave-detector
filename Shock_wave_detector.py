@@ -10,7 +10,7 @@ import pickle
 from shutil import rmtree, copytree
 from random import randint
 
-import DL_models as models
+import Models
 import Dataset_processing as Dataprocess
 import AugmentationDataset as ADS
 import reader
@@ -243,9 +243,9 @@ class ShockWaveScanner:
         image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
         activation = self.parameters.training_parameters['activation']
 
-        #Model = models.slice_scanner_lenet_model
-        Model = models.slice_scanner_simple_cnn_model
-        #Model = models.slice_scanner_inception_model
+        #Model = Models.slice_scanner_lenet_model
+        Model = Models.slice_scanner_simple_cnn_model
+        #Model = Models.slice_scanner_inception_model
 
         self.model.Model = []
         self.model.History = []
@@ -498,7 +498,7 @@ class ShockWaveScanner:
             activation = casedata.training_parameters['activation']
 
             # Load weights into new model
-            Model = models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
+            Model = Models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
             weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
             Model.load_weights(os.path.join(storage_dir,weights_filename))
 
