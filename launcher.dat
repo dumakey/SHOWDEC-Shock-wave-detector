@@ -6,8 +6,8 @@ DATADIR=C:\Users\juan.ramos\Shock_wave_detector
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-TYPEANALYSIS=SINGLETRAINING   % SINGLETRAINING, SENSANALYSIS, PREDICT, DATAGEN, PLOTACTIVATIONS 
-IMPORTMODEL=0
+TYPEANALYSIS=PREDICT   % SINGLETRAINING, SENSANALYSIS, TRAINPREDICT, PREDICT, DATAGEN, PLOTACTIVATIONS 
+IMPORTMODEL=1
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -17,7 +17,7 @@ LEARNINGRATE=0.003
 L2REG=0.1
 L1REG=NONE
 DROPOUT=0.1
-EPOCHS=40
+EPOCHS=1
 BATCHSIZE=16
 ACTIVATION=LEAKYRELU  # NONE, RELU, ELU, LEAKYRELU, SWISH, SIGMOID, TANH
 # When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH

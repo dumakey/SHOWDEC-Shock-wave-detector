@@ -7,7 +7,7 @@ from collections import OrderedDict
 import tensorflow as tf
 import cv2 as cv
 import pickle
-from shutil import rmtree
+from shutil import rmtree, copytree
 from random import randint
 
 import DL_models as models
@@ -72,6 +72,7 @@ class ShockWaveScanner:
         analysis_list = {
                         'singletraining': self.singletraining,
                         'sensanalysis': self.sensitivity_analysis_on_training,
+                        'trainpredict': self.trainpredict,
                         'datagen': self.data_generation,
                         'plotactivations': self.plot_activations,
                         'predict': self.predict_on_test_set,
@@ -81,6 +82,8 @@ class ShockWaveScanner:
                                            self.parameters.training_parameters['addaugdata'][1]],
                         'sensanalysis': [bool(self.parameters.training_parameters['addaugdata'][0]),
                                          self.parameters.training_parameters['addaugdata'][1]],
+                        'trainpredict': [bool(self.parameters.training_parameters['addaugdata'][0]),
+                                          self.parameters.training_parameters['addaugdata'][1]],
                         'datagen': [],
                         'plotactivations': [],
                         'predict': [],
@@ -108,9 +111,9 @@ class ShockWaveScanner:
         Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
         if self.model.imported == False:
             self.train_model(sens_variable)
-        self.export_nn_log()
         self.export_model_performance(sens_variable)
         self.export_model(sens_variable)
+        self.export_nn_log()
 
     def singletraining(self, add_augmented=False, augdataset_ID=1):
 
@@ -125,10 +128,38 @@ class ShockWaveScanner:
         Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
         if self.model.imported == False:
             self.train_model()
-        self.export_nn_log()
         self.export_model_performance()
         self.export_model()
+        self.export_nn_log()
+        
+    def trainpredict(self, add_augmented=False, augdataset_ID=1):
+        
+        # Training
+        case_dir = self.case_dir
+        img_dims = self.parameters.img_size
+        train_size = self.parameters.training_parameters['train_size']
+        batch_size = self.parameters.training_parameters['batch_size']
 
+        self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
+        Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
+        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        if self.model.imported == False:
+            self.train_model()
+        self.export_model_performance()
+        self.export_model()
+        self.export_nn_log()
+        
+        # Prediction
+        model_dir = os.path.join(case_dir,'Results',str(self.parameters.analysis['case_ID']),'Model')
+        generation_dir = os.path.join(case_dir,'Results','pretrained_model')
+        if os.path.exists(generation_dir):
+            rmtree(generation_dir)
+        copytree(model_dir,generation_dir)
+        self.model.imported = True
+        self.predict_on_test_set()
+        
+        
     def data_generation(self):
 
         transformations = [{k:v[1:] for (k,v) in self.parameters.img_processing.items() if v[0] == 1}][0]
@@ -461,9 +492,10 @@ class ShockWaveScanner:
             Model = tf.keras.models.model_from_json(loaded_model_json)
 
         except:
-            img_dim = self.parameters.img_size
-            alpha = self.parameters.training_parameters['learning_rate']
-            activation = self.parameters.training_parameters['activation']
+            casedata = reader.read_case_logfile(os.path.join(storage_dir,'SHOWDEC.log'))
+            img_dim = casedata.img_size
+            alpha = casedata.training_parameters['learning_rate']
+            activation = casedata.training_parameters['activation']
 
             # Load weights into new model
             Model = models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
@@ -486,60 +518,94 @@ class ShockWaveScanner:
         return Model, History
 
     def export_nn_log(self):
+    
+        def update_log(parameters, model):
+            training = OrderedDict()
+            training['TRAINING SIZE'] = parameters.training_parameters['train_size']
+            training['LEARNING RATE'] = parameters.training_parameters['learning_rate']
+            training['L2 REGULARIZER'] = parameters.training_parameters['l2_reg']
+            training['L1 REGULARIZER'] = parameters.training_parameters['l1_reg']
+            training['DROPOUT'] = parameters.training_parameters['dropout']
+            training['ACTIVATION'] = parameters.training_parameters['activation']
+            training['NUMBER OF EPOCHS'] = parameters.training_parameters['epochs']
+            training['BATCH SIZE'] = parameters.training_parameters['batch_size']
+            training['OPTIMIZER'] = [model.optimizer._name for model in model.Model]
+            training['METRICS'] = [model.metrics_names[-1] if model.metrics_names != None else None for model in model.Model]
+            training['DATASET_AUGMENTATION'] = bool(self.parameters.training_parameters['addaugdata'][0])
+            if training['DATASET_AUGMENTATION'] == 1:
+                training['DATASET_AUGMENTATION_ID'] = self.parameters.training_parameters['addaugdata'][1]
+            
+            analysis = OrderedDict()
+            analysis['CASE ID'] = parameters.analysis['case_ID']
+            analysis['ANALYSIS'] = parameters.analysis['type']
+            analysis['IMPORTED MODEL'] = parameters.analysis['import']
+            analysis['LAST TRAINING LOSS'] = ['{:.3f}'.format(history.history['loss'][-1]) for history in model.History]
+            analysis['LAST CV LOSS'] = ['{:.3f}'.format(history.history['val_loss'][-1]) for history in model.History]
 
-        training = OrderedDict()
-        training['TRAINING SIZE'] = self.parameters.training_parameters['train_size']
-        training['LEARNING RATE'] = self.parameters.training_parameters['learning_rate']
-        training['L2 REGULARIZER'] = self.parameters.training_parameters['l2_reg']
-        training['L1 REGULARIZER'] = self.parameters.training_parameters['l1_reg']
-        training['DROPOUT'] = self.parameters.training_parameters['dropout']
-        training['ACTIVATION'] = self.parameters.training_parameters['activation']
-        training['NUMBER OF EPOCHS'] = self.parameters.training_parameters['epochs']
-        training['BATCH SIZE'] = self.parameters.training_parameters['batch_size']
-        training['OPTIMIZER'] = [model.optimizer._name for model in self.model.Model]
-        training['METRICS'] = [model.metrics_names if model.metrics_names != None else None for model in self.model.Model]
-        training['DATASET_AUGMENTATION'] = bool(self.parameters.training_parameters['addaugdata'][0])
-        if training['DATASET_AUGMENTATION'] == 1:
-            training['DATASET_AUGMENTATION_ID'] = self.parameters.training_parameters['addaugdata'][1]
+            architecture = OrderedDict()
+            architecture['INPUT SHAPE'] = parameters.img_size
 
-        analysis = OrderedDict()
-        analysis['CASE ID'] = self.parameters.analysis['case_ID']
-        analysis['ANALYSIS'] = self.parameters.analysis['type']
-        analysis['IMPORTED MODEL'] = self.parameters.analysis['import']
-        analysis['LAST TRAINING LOSS'] = ['{:.3f}'.format(history.history['loss'][-1]) for history in self.model.History]
-        analysis['LAST CV LOSS'] = ['{:.3f}'.format(history.history['val_loss'][-1]) for history in self.model.History]
+            return training, analysis, architecture
+            
+        
+        parameters = self.parameters
+        if parameters.analysis['type'] == 'sensanalysis':
+            varname, varvalues = parameters.sens_variable
+            for value in varvalues:
+                parameters.training_parameters[varname] = value
+                training, analysis, architecture = update_log(parameters,self.model)
 
-        architecture = OrderedDict()
-        architecture['INPUT SHAPE'] = self.parameters.img_size
+                case_ID = parameters.analysis['case_ID']
+                if type(value) == str:
+                    storage_folder = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={}'.format(varname,value))
+                else:
+                    storage_folder = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={:.3f}'.format(varname,value))
+                with open(os.path.join(storage_folder,'SHOWDEC.log'),'w') as f:
+                    f.write('SHOWDEC log file\n')
+                    f.write('==================================================================================================\n')
+                    f.write('->ANALYSIS\n')
+                    for item in analysis.items():
+                        f.write(item[0] + '=' + str(item[1]) + '\n')
+                    f.write('--------------------------------------------------------------------------------------------------\n')
+                    f.write('->TRAINING\n')
+                    for item in training.items():
+                        f.write(item[0] + '=' + str(item[1]) + '\n')
+                    f.write('--------------------------------------------------------------------------------------------------\n')
+                    f.write('->ARCHITECTURE\n')
+                    for item in architecture.items():
+                        f.write(item[0] + '=' + str(item[1]) + '\n')
+                    f.write('--------------------------------------------------------------------------------------------------\n')
+                    f.write('->MODEL\n')
+                    for model in self.model.Model:
+                        model.summary(print_fn=lambda x: f.write(x + '\n'))
+                    f.write('==================================================================================================\n')
 
-        case_ID = self.parameters.analysis['case_ID']
-        storage_folder = os.path.join(self.case_dir, 'Results', str(case_ID))
-        if os.path.exists(storage_folder):
-            rmtree(storage_folder)
-        os.makedirs(storage_folder)
-        with open(os.path.join(storage_folder, 'SHOWDEC.log'), 'w') as f:
-            f.write('SHOWDEC log file\n')
-            f.write('==================================================================================================\n')
-            f.write('->ANALYSIS\n')
-            for item in analysis.items():
-                f.write('>' + item[0] + '=' + str(item[1]) + '\n')
-            f.write('--------------------------------------------------------------------------------------------------\n')
-            f.write('->TRAINING\n')
-            for item in training.items():
-                f.write('>' + item[0] + '=' + str(item[1]) + '\n')
-            f.write('--------------------------------------------------------------------------------------------------\n')
-            f.write('->ARCHITECTURE\n')
-            for item in architecture.items():
-                f.write(item[0] + '=' + str(item[1]) + '\n')
-            f.write('--------------------------------------------------------------------------------------------------\n')
-            f.write('->MODEL\n')
-            for model in self.model.Model:
-                model.summary(print_fn=lambda x: f.write(x + '\n'))
-            f.write('==================================================================================================\n')
+        else:
+            training, analysis, architecture = update_log(self.parameters,self.model)
+            case_ID = parameters.analysis['case_ID']
+            storage_folder = os.path.join(self.case_dir,'Results',str(case_ID))
+            with open(os.path.join(storage_folder,'Model','SHOWDEC.log'),'w') as f:
+                f.write('SHOWDEC log file\n')
+                f.write('==================================================================================================\n')
+                f.write('->ANALYSIS\n')
+                for item in analysis.items():
+                    f.write(item[0] + '=' + str(item[1]) + '\n')
+                f.write('--------------------------------------------------------------------------------------------------\n')
+                f.write('->TRAINING\n')
+                for item in training.items():
+                    f.write(item[0] + '=' + str(item[1]) + '\n')
+                f.write('--------------------------------------------------------------------------------------------------\n')
+                f.write('->ARCHITECTURE\n')
+                for item in architecture.items():
+                    f.write(item[0] + '=' + str(item[1]) + '\n')
+                f.write('--------------------------------------------------------------------------------------------------\n')
+                f.write('->MODEL\n')
+                for model in self.model.Model:
+                    model.summary(print_fn=lambda x: f.write(x + '\n'))
+                f.write('==================================================================================================\n')
 
 
 if __name__ == '__main__':
     launcher = r'C:\Users\juan.ramos\Shock_wave_detector\Scripts\launcher.dat'
     sw_scanner = ShockWaveScanner(launcher,check_model=False)
     sw_scanner.launch_analysis()
-    print()
