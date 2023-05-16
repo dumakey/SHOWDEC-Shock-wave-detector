@@ -10,11 +10,11 @@ import pickle
 from shutil import rmtree, copytree
 from random import randint
 
-import Models
-import Dataset_processing as Dataprocess
-import AugmentationDataset as ADS
+import models
+import dataset_processing
+import dataset_augmentation
 import reader
-import Postprocessing
+import postprocessing
 
 class ShockWaveScanner:
 
@@ -105,10 +105,10 @@ class ShockWaveScanner:
 
         # Perform sensitivity analysis
         self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
-        Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        dataset_processing.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
         
         self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        dataset_processing.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
         if self.model.imported == False:
             self.train_model(sens_variable)
         self.export_model_performance(sens_variable)
@@ -123,9 +123,9 @@ class ShockWaveScanner:
         batch_size = self.parameters.training_parameters['batch_size']
 
         self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
-        Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        dataset_processing.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
         self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        dataset_processing.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
         if self.model.imported == False:
             self.train_model()
         self.export_model_performance()
@@ -141,9 +141,9 @@ class ShockWaveScanner:
         batch_size = self.parameters.training_parameters['batch_size']
 
         self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
-        Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+        dataset_processing.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
         self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        dataset_processing.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
         if self.model.imported == False:
             self.train_model()
         self.export_model_performance()
@@ -183,9 +183,9 @@ class ShockWaveScanner:
         
         # Generate datasets
         self.datasets.data_train, self.datasets.data_cv, self.datasets.data_test = \
-            Dataprocess.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
+            dataset_processing.get_datasets(case_dir,img_dims,train_size,add_augmented,augdataset_ID)
         self.datasets.dataset_train, self.datasets.dataset_cv, self.datasets.dataset_test = \
-        Dataprocess.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
+        dataset_processing.get_tensorflow_datasets(self.datasets.data_train,self.datasets.data_cv,self.datasets.data_test,batch_size)
 
         m_tr = self.datasets.data_train[0].shape[0]
         m_cv = self.datasets.data_cv[0].shape[0]
@@ -215,7 +215,7 @@ class ShockWaveScanner:
         # Plot
         for idx in idx_set:
             img = dataset[idx,:]
-            Postprocessing.monitor_hidden_layers(img,model,case_dir,figs_per_row,rows_to_cols_ratio,idx)
+            postprocessing.monitor_hidden_layers(img,model,case_dir,figs_per_row,rows_to_cols_ratio,idx)
 
     def generate_augmented_data(self, transformations, augmented_dataset_size=1):
 
@@ -225,9 +225,9 @@ class ShockWaveScanner:
         augmented_dataset_dir = os.path.join(case_dir,'Datasets','Datasets_augmented')
 
         # Unpack data
-        X, y = Dataprocess.set_dataset(case_dir,img_dims)
+        X, y = dataset_processing.set_dataset(case_dir,img_dims)
         # Generate new dataset
-        data_augmenter = ADS.datasetAugmentationClass(X,y,transformations,augmented_dataset_size,augmented_dataset_dir)
+        data_augmenter = dataset_augmentation.datasetAugmentationClass(X,y,transformations,augmented_dataset_size,augmented_dataset_dir)
         data_augmenter.transform_images()
         data_augmenter.export_augmented_dataset()
 
@@ -243,9 +243,9 @@ class ShockWaveScanner:
         image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
         activation = self.parameters.training_parameters['activation']
 
-        #Model = Models.slice_scanner_lenet_model
-        Model = Models.slice_scanner_simple_cnn_model
-        #Model = Models.slice_scanner_inception_model
+        #Model = models.slice_scanner_lenet_model
+        Model = models.slice_scanner_simple_cnn_model
+        #Model = models.slice_scanner_inception_model
 
         self.model.Model = []
         self.model.History = []
@@ -321,9 +321,9 @@ class ShockWaveScanner:
         for pred_case in pred_cases:
             metrics = dict.fromkeys(metrics_functions)
 
-            X_test, y_test, paths_test = Dataprocess.read_preset_datasets(os.path.join(pred_dir,pred_case),return_filepaths=True)
-            X_test = Dataprocess.standardize_image_size(X_test,img_dims)
-            X_test, y_test = Dataprocess.preprocess_data(X_test,y_test)
+            X_test, y_test, paths_test = dataset_processing.read_preset_datasets(os.path.join(pred_dir,pred_case),return_filepaths=True)
+            X_test = dataset_processing.standardize_image_size(X_test,img_dims)
+            X_test, y_test = dataset_processing.preprocess_data(X_test,y_test)
             logits = Model.predict(X_test)
             m_test = logits.shape[0]
             y_hat = np.array([1 if logit > threshold else 0 for logit in logits])
@@ -498,7 +498,7 @@ class ShockWaveScanner:
             activation = casedata.training_parameters['activation']
 
             # Load weights into new model
-            Model = Models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
+            Model = models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
             weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
             Model.load_weights(os.path.join(storage_dir,weights_filename))
 

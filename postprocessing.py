@@ -2,7 +2,7 @@ import os
 import numpy as np
 import cv2 as cv
 from matplotlib import pyplot as plt
-from Preprocessing import ImageTransformer
+from preprocessing import ImageTransformer
 import tensorflow as tf
 
 def monitor_hidden_layers(img, model, case_dir, figs_per_row=5, rows_to_cols_ratio=1, idx=None):

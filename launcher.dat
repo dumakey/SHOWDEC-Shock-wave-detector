@@ -6,8 +6,8 @@ DATADIR=C:\Users\juan.ramos\Shock_wave_detector
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-TYPEANALYSIS=PREDICT   % SINGLETRAINING, SENSANALYSIS, TRAINPREDICT, PREDICT, DATAGEN, PLOTACTIVATIONS 
-IMPORTMODEL=1
+TYPEANALYSIS=TRAINPREDICT   % SINGLETRAINING, SENSANALYSIS, TRAINPREDICT, PREDICT, DATAGEN, PLOTACTIVATIONS 
+IMPORTMODEL=0
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -17,8 +17,8 @@ LEARNINGRATE=0.003
 L2REG=0.1
 L1REG=NONE
 DROPOUT=0.1
-EPOCHS=1
-BATCHSIZE=16
+EPOCHS=50
+BATCHSIZE=32
 ACTIVATION=LEAKYRELU  # NONE, RELU, ELU, LEAKYRELU, SWISH, SIGMOID, TANH
 # When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH
 ADDAUGMENTED=1
@@ -31,8 +31,8 @@ AUGDATASIZE=1
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Image processing %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-IMAGERESIZE=(50,30)  % (width, height)
-%IMAGERESIZE=(200,150)  % (width, height)
+%IMAGERESIZE=(50,30)  % (width, height)
+IMAGERESIZE=(150,100)  % (width, height)
 %IMAGERESIZE=(600,400)  % (width, height)
 % Rotation
 ROTATION=0

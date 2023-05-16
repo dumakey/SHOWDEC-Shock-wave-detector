@@ -1,4 +1,4 @@
-from Preprocessing import ImageTransformer
+from preprocessing import ImageTransformer
 from random import sample
 import os
 from shutil import rmtree
