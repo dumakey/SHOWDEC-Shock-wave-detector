@@ -12,13 +12,13 @@ IMPORTMODEL=0
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Training parameters
-TRAINSIZE=0.80
+TRAINSIZE=0.75
 LEARNINGRATE=0.003
-L2REG=0.1
+L2REG=0.15
 L1REG=NONE
-DROPOUT=0.1
-EPOCHS=50
-BATCHSIZE=32
+DROPOUT=0.25
+EPOCHS=60
+BATCHSIZE=48
 ACTIVATION=LEAKYRELU  # NONE, RELU, ELU, LEAKYRELU, SWISH, SIGMOID, TANH
 # When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH
 ADDAUGMENTED=1

@@ -147,9 +147,9 @@ def get_datasets(case_dir, img_dims, train_size, add_augmented=False, augdataset
     return data_train, data_cv, data_test
 
 def create_dataset_pipeline(dataset, is_train=True, num_threads=8, prefetch_buffer=100, batch_size=32):
+
     X, y = dataset
-    y_oh = tf.one_hot(y,depth=1)
-    dataset_tensor = tf.data.Dataset.from_tensor_slices((X, y_oh))
+    dataset_tensor = tf.data.Dataset.from_tensor_slices((X,y))
 
     if is_train:
         dataset_tensor = dataset_tensor.shuffle(buffer_size=X.shape[0]).repeat()

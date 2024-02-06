@@ -240,12 +240,10 @@ class ShockWaveScanner:
         l2_reg = self.parameters.training_parameters['l2_reg']
         l1_reg = self.parameters.training_parameters['l1_reg']
         dropout = self.parameters.training_parameters['dropout']
-        image_shape = self.datasets.dataset_train.element_spec[0].shape[1:3]
+        image_shape = self.parameters.img_size
         activation = self.parameters.training_parameters['activation']
 
-        #Model = models.slice_scanner_lenet_model
         Model = models.slice_scanner_simple_cnn_model
-        #Model = models.slice_scanner_inception_model
 
         self.model.Model = []
         self.model.History = []
@@ -293,7 +291,7 @@ class ShockWaveScanner:
 
     def predict_on_test_set(self):
 
-        img_dims = self.parameters.img_size
+        image_shape = self.parameters.img_size
         pred_dir = self.parameters.prediction['dir']
         threshold = self.parameters.prediction['threshold']
 
@@ -322,7 +320,7 @@ class ShockWaveScanner:
             metrics = dict.fromkeys(metrics_functions)
 
             X_test, y_test, paths_test = dataset_processing.read_preset_datasets(os.path.join(pred_dir,pred_case),return_filepaths=True)
-            X_test = dataset_processing.standardize_image_size(X_test,img_dims)
+            X_test = dataset_processing.standardize_image_size(X_test,image_shape)
             X_test, y_test = dataset_processing.preprocess_data(X_test,y_test)
             logits = Model.predict(X_test)
             m_test = logits.shape[0]
@@ -431,12 +429,10 @@ class ShockWaveScanner:
                 else:
                     storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model','{}={:.3f}'
                                                .format(sens_var[0],sens_var[1][i]))
-                model_json_name = 'SHOWDEC_model_{}_{}={}_arquitecture.json'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
                 model_weights_name = 'SHOWDEC_model_{}_{}={}_weights.h5'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
                 model_folder_name = 'SHOWDEC_model_{}_{}={}'.format(str(case_ID),sens_var[0],str(sens_var[1][i]))
             else:
                 storage_dir = os.path.join(self.case_dir,'Results',str(case_ID),'Model')
-                model_json_name = 'SHOWDEC_model_{}_arquitecture.json'.format(str(case_ID))
                 model_weights_name = 'SHOWDEC_model_{}_weights.h5'.format(str(case_ID))
                 model_folder_name = 'SHOWDEC_model_{}'.format(str(case_ID))
 
@@ -449,58 +445,22 @@ class ShockWaveScanner:
                 pickle.dump(self.model.History[i].history,f)
 
             # Save model
-            # Export model arquitecture to JSON file
-            model_json = self.model.Model[i].to_json()
-            with open(os.path.join(storage_dir,model_json_name),'w') as json_file:
-                json_file.write(model_json)
             self.model.Model[i].save(os.path.join(storage_dir,model_folder_name.format(str(case_ID))))
-
             # Export model weights to HDF5 file
             self.model.Model[i].save_weights(os.path.join(storage_dir,model_weights_name))
-
-    def reconstruct_model_old(self):
-
-        storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
-        try:
-            json_filename = [file for file in os.listdir(storage_dir) if file.endswith('.json')][0]
-            json_file = open(os.path.join(storage_dir,json_filename),'r')
-            loaded_model_json = json_file.read()
-            json_file.close()
-
-            Model = tf.keras.models.model_from_json(loaded_model_json)
-        except:
-            tf.config.run_functions_eagerly(True) # Enable eager execution
-            try:
-                model_folder = next(os.walk(storage_dir))[1][0]
-            except:
-                print('There is no model stored in the folder')
-
-            Model = tf.keras.models.load_model(os.path.join(storage_dir,model_folder))
-            tf.config.run_functions_eagerly(False) # Disable eager execution
-
-        return Model
 
     def reconstruct_model(self, mode='train'):
 
         storage_dir = os.path.join(self.case_dir,'Results','pretrained_model')
-        try:
-            json_filename = [file for file in os.listdir(storage_dir) if file.endswith('.json')][0]
-            json_file = open(os.path.join(storage_dir,json_filename),'r')
-            loaded_model_json = json_file.read()
-            json_file.close()
+        casedata = reader.read_case_logfile(os.path.join(storage_dir,'SHOWDEC.log'))
+        img_dim = casedata.img_size
+        alpha = casedata.training_parameters['learning_rate']
+        activation = casedata.training_parameters['activation']
 
-            Model = tf.keras.models.model_from_json(loaded_model_json)
-
-        except:
-            casedata = reader.read_case_logfile(os.path.join(storage_dir,'SHOWDEC.log'))
-            img_dim = casedata.img_size
-            alpha = casedata.training_parameters['learning_rate']
-            activation = casedata.training_parameters['activation']
-
-            # Load weights into new model
-            Model = models.slice_scanner_lenet_model(img_dim,alpha,0.0,0.0,0.0,activation)
-            weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
-            Model.load_weights(os.path.join(storage_dir,weights_filename))
+        # Load weights into new model
+        Model = models.slice_scanner_simple_cnn_model(img_dim,alpha,0.0,0.0,0.0,activation)
+        weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
+        Model.load_weights(os.path.join(storage_dir,weights_filename))
 
         # Reconstruct history
         class history_container:
