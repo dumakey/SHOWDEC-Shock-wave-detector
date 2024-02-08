@@ -2,12 +2,12 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Case folders %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-DATADIR=C:\Users\juan.ramos\Shock_wave_detector
+DATADIR=C:\Users\juan.ramos\SHOWDEC-Shock_wave_detector
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-TYPEANALYSIS=TRAINPREDICT   % SINGLETRAINING, SENSANALYSIS, TRAINPREDICT, PREDICT, DATAGEN, PLOTACTIVATIONS 
-IMPORTMODEL=0
+TYPEANALYSIS=PREDICT   % SINGLETRAINING, SENSANALYSIS, TRAINPREDICT, PREDICT, DATAGEN, PLOTACTIVATIONS 
+IMPORTMODEL=1
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -17,7 +17,7 @@ LEARNINGRATE=0.003
 L2REG=0.15
 L1REG=NONE
 DROPOUT=0.25
-EPOCHS=60
+EPOCHS=50
 BATCHSIZE=48
 ACTIVATION=LEAKYRELU  # NONE, RELU, ELU, LEAKYRELU, SWISH, SIGMOID, TANH
 # When sensitivity analysis, indicate activations separated by commas --> ACTIVATION=RELU,SWISH
@@ -63,7 +63,7 @@ NSAMPLESACT=3
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Prediction %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-DATAPREDDIR=C:\Users\juan.ramos\Shock_wave_detector\Datasets\Datasets_test
+DATAPREDDIR=C:\Users\juan.ramos\SHOWDEC-Shock_wave_detector\Datasets\Datasets_test
 THRESHOLD=0.5
 
 

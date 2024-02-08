@@ -243,14 +243,15 @@ class ShockWaveScanner:
         image_shape = self.parameters.img_size
         activation = self.parameters.training_parameters['activation']
 
-        Model = models.slice_scanner_simple_cnn_model
+        #Model = models.model
+        Model = models.res_model
 
         self.model.Model = []
         self.model.History = []
         if sens_var == None:  # If it is a one-time training
             self.model.Model.append(Model(image_shape,alpha,l2_reg,l1_reg,dropout,activation))
             self.model.History.append(self.model.Model[-1].fit(self.datasets.dataset_train,epochs=nepoch,batch_size=batch_size,
-                                                      steps_per_epoch=500,validation_data=self.datasets.dataset_cv,
+                                                      steps_per_epoch=200,validation_data=self.datasets.dataset_cv,
                                                       validation_steps=None))
         else: # If it is a sensitivity analysis
             if type(alpha) == list:
@@ -327,8 +328,9 @@ class ShockWaveScanner:
             y_hat = np.array([1 if logit > threshold else 0 for logit in logits])
             for key in metrics.keys():
                 metric_function = metrics_functions[key]
-                metric_function.update_state(y_test,logits)
+                metric_function.update_state(y_test,y_hat)
                 metrics[key] = metric_function.result().numpy()
+                metric_function.reset_state()
             metrics['F1'] = 2*metrics['precision']*metrics['recall']/(metrics['precision']+metrics['recall'])
 
             metrics_name = list(metrics.keys())
@@ -458,7 +460,8 @@ class ShockWaveScanner:
         activation = casedata.training_parameters['activation']
 
         # Load weights into new model
-        Model = models.slice_scanner_simple_cnn_model(img_dim,alpha,0.0,0.0,0.0,activation)
+        #Model = models.model(img_dim,alpha,0.0,0.0,0.0,activation)
+        Model = models.res_model(img_dim,alpha,0.0,0.0,0.0,activation)
         weights_filename = [file for file in os.listdir(storage_dir) if file.endswith('.h5')][0]
         Model.load_weights(os.path.join(storage_dir,weights_filename))
 
@@ -566,6 +569,6 @@ class ShockWaveScanner:
 
 
 if __name__ == '__main__':
-    launcher = r'C:\Users\juan.ramos\Shock_wave_detector\Scripts\launcher.dat'
+    launcher = r'C:\Users\juan.ramos\SHOWDEC-Shock_wave_detector\Scripts\launcher.dat'
     sw_scanner = ShockWaveScanner(launcher,check_model=False)
     sw_scanner.launch_analysis()
